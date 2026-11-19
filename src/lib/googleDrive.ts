@@ -34,8 +34,8 @@ export interface UploadImageParams {
 }
 
 /**
- * Uploads an image buffer to the configured Google Drive folder and
- * grants public read access so it can be embedded via Drive's thumbnail URL.
+ * Uploads an image buffer to the configured Google Drive folder.
+ * Files remain private (restricted access) and are served through our authenticated proxy route.
  */
 export async function uploadImageToDrive({
   buffer,
@@ -66,15 +66,31 @@ export async function uploadImageToDrive({
     throw new Error("Google Drive did not return a file ID after upload.");
   }
 
-  await drive.permissions.create({
+  return fileId;
+}
+
+/**
+ * Fetches a private image's metadata and binary buffer from Google Drive.
+ */
+export async function getDriveImageStream(
+  fileId: string
+): Promise<{ buffer: Buffer; mimeType: string }> {
+  const drive = getDriveClient();
+
+  const metaRes = await drive.files.get({
     fileId,
-    requestBody: {
-      role: "reader",
-      type: "anyone",
-    },
+    fields: "mimeType",
   });
 
-  return fileId;
+  const mimeType = metaRes.data.mimeType || "image/jpeg";
+
+  const mediaRes = await drive.files.get(
+    { fileId, alt: "media" },
+    { responseType: "arraybuffer" }
+  );
+
+  const buffer = Buffer.from(mediaRes.data as ArrayBuffer);
+  return { buffer, mimeType };
 }
 
 /**

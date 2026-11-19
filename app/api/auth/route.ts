@@ -56,6 +56,16 @@ export async function POST(request: Request) {
       maxAge: 60 * 60 * 24 * 30, // 30 days
     });
 
+    response.cookies.set({
+      name: "garden_auth",
+      value: "authenticated",
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30, // 30 days
+    });
+
     return response;
   } catch (error) {
     console.error("Auth error:", error);
@@ -70,6 +80,15 @@ export async function DELETE() {
   const response = NextResponse.json({ ok: true });
   response.cookies.set({
     name: SESSION_COOKIE_NAME,
+    value: "",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  });
+  response.cookies.set({
+    name: "garden_auth",
     value: "",
     httpOnly: true,
     sameSite: "lax",

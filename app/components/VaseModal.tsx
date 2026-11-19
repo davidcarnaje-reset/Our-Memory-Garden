@@ -48,6 +48,61 @@ function formatDisplayDate(dateStr: string): string {
   });
 }
 
+const MAX_IMAGE_DIMENSION = 1600;
+const JPEG_QUALITY = 0.85;
+
+/**
+ * Compresses and resizes an image client-side via <canvas> so phone photos
+ * stay well under Vercel's 4.5 MB serverless request body limit.
+ */
+async function compressImageFile(file: File): Promise<File> {
+  if (typeof window === "undefined") return file;
+
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("Failed to decode image"));
+      image.src = objectUrl;
+    });
+
+    const { naturalWidth: width, naturalHeight: height } = img;
+    const scale = Math.min(1, MAX_IMAGE_DIMENSION / Math.max(width, height));
+    const targetWidth = Math.max(1, Math.round(width * scale));
+    const targetHeight = Math.max(1, Math.round(height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+
+    ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/jpeg", JPEG_QUALITY)
+    );
+    if (!blob) return file;
+
+    // Keep original if it is already smaller and within max dimensions
+    if (scale === 1 && blob.size >= file.size) {
+      return file;
+    }
+
+    const baseName = file.name.replace(/\.[^.]+$/, "") || "memory";
+    return new File([blob], `${baseName}.jpg`, {
+      type: "image/jpeg",
+      lastModified: Date.now(),
+    });
+  } catch {
+    return file;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 export default function VaseModal({
   isOpen,
   year,
@@ -132,8 +187,10 @@ export default function VaseModal({
     setFormError(null);
 
     try {
+      const compressedImage = await compressImageFile(imageFile);
+
       const formData = new FormData();
-      formData.append("image", imageFile);
+      formData.append("image", compressedImage);
       formData.append("note", note.trim());
       formData.append("memory_date", memoryDate);
       formData.append("uploaded_by", uploadedBy);
@@ -277,7 +334,7 @@ export default function VaseModal({
             ) : (
               <div className="space-y-5">
                 {memories.map((memory) => {
-                  const imageUrl = `https://drive.google.com/thumbnail?id=${memory.drive_file_id}&sz=w1000`;
+                  const imageUrl = `/api/image/${memory.drive_file_id}`;
                   const isConfirming = confirmDeleteId === memory.id;
                   const isDeleting = deletingId === memory.id;
 
@@ -291,7 +348,6 @@ export default function VaseModal({
                         <img
                           src={imageUrl}
                           alt={memory.note.slice(0, 80)}
-                          referrerPolicy="no-referrer"
                           className="w-full max-h-[380px] object-cover"
                         />
                       </div>
