@@ -1,26 +1,59 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #faf6f0;
+  --foreground: #3f322b;
+  --cream-card: #fffcf7;
+  --linen: #f2e9dc;
+  --sage: #6d8c70;
+  --sage-light: #e4ede4;
+  --terracotta: #c87a65;
+  --dusty-rose: #d98a8c;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: var(--font-sans);
+  --font-serif: var(--font-serif);
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
+  background-image:
+    radial-gradient(circle at 12% 18%, rgba(217, 138, 140, 0.1) 0%, transparent 42%),
+    radial-gradient(circle at 88% 12%, rgba(109, 140, 112, 0.11) 0%, transparent 40%),
+    radial-gradient(circle at 50% 90%, rgba(232, 196, 104, 0.1) 0%, transparent 45%);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+@keyframes sway {
+  0%,
+  100% {
+    transform: rotate(-1.6deg);
+  }
+  50% {
+    transform: rotate(1.8deg);
+  }
+}
+
+@keyframes bloomIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.82) translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-sway {
+  transform-origin: 50% 85%;
+  animation: sway 4.8s ease-in-out infinite;
+}
+
+.animate-bloom-in {
+  animation: bloomIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
