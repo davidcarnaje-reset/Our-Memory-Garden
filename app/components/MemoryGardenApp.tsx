@@ -8,16 +8,24 @@ import {
   Droplets,
   Flower2,
   Heart,
+  LayoutGrid,
   Loader2,
   LogOut,
   Moon,
   Shuffle,
   Sparkles,
   Sun,
+  Trees,
   User,
   X,
 } from "lucide-react";
-import type { Memory, MemoryReply, WateringLog } from "@/src/lib/db";
+import type {
+  GardenPlacement,
+  Memory,
+  MemoryReply,
+  WateringLog,
+} from "@/src/lib/db";
+import GardenPlace from "./GardenPlace";
 import MemoryPhotoCarousel from "./MemoryPhotoCarousel";
 import PasscodeGate from "./PasscodeGate";
 import VaseIllustration from "./VaseIllustration";
@@ -125,6 +133,10 @@ export default function MemoryGardenApp({
 
   const isNight = ambienceMode === "auto" ? autoIsNight : ambienceMode === "night";
 
+  // View Mode: Monthly Shelf vs Garden Place
+  const [viewMode, setViewMode] = useState<"shelf" | "garden">("shelf");
+  const [placements, setPlacements] = useState<GardenPlacement[]>([]);
+
   // Random Memory Spotlight
   const [spotlightMemory, setSpotlightMemory] = useState<Memory | null>(null);
   const [isPickingRandom, setIsPickingRandom] = useState(false);
@@ -188,9 +200,10 @@ export default function MemoryGardenApp({
     let cancelled = false;
     async function load() {
       try {
-        const [memRes, waterRes] = await Promise.all([
+        const [memRes, waterRes, gardenRes] = await Promise.all([
           fetch(`/api/memories?year=${year}`, { cache: "no-store" }),
           fetch("/api/water", { cache: "no-store" }),
+          fetch(`/api/garden?year=${year}`, { cache: "no-store" }),
         ]);
         if (cancelled) return;
         if (memRes.status === 401) {
@@ -209,6 +222,13 @@ export default function MemoryGardenApp({
           const waterData = await waterRes.json();
           if (waterData.latest) {
             setWateringLog(waterData.latest);
+          }
+        }
+
+        if (gardenRes.ok) {
+          const gardenData = await gardenRes.json();
+          if (Array.isArray(gardenData.placements)) {
+            setPlacements(gardenData.placements);
           }
         }
       } catch {
@@ -315,6 +335,63 @@ export default function MemoryGardenApp({
           : mem
       )
     );
+  }
+
+  async function handleSavePlacement(
+    monthKey: string,
+    xPercent: number,
+    yPercent: number,
+    scale: number
+  ) {
+    // Optimistic update
+    setPlacements((prev) => {
+      const next: GardenPlacement = {
+        month_key: monthKey,
+        x_percent: xPercent,
+        y_percent: yPercent,
+        scale,
+        updated_by: uploadedBy,
+        updated_at: new Date().toISOString(),
+      };
+      const exists = prev.some((p) => p.month_key === monthKey);
+      return exists
+        ? prev.map((p) => (p.month_key === monthKey ? next : p))
+        : [...prev, next];
+    });
+
+    try {
+      const res = await fetch("/api/garden", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          month_key: monthKey,
+          x_percent: xPercent,
+          y_percent: yPercent,
+          scale,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.placement) {
+        setPlacements((prev) =>
+          prev.map((p) =>
+            p.month_key === monthKey ? data.placement : p
+          )
+        );
+      }
+    } catch {
+      // Keep optimistic state
+    }
+  }
+
+  async function handleRemovePlacement(monthKey: string) {
+    setPlacements((prev) => prev.filter((p) => p.month_key !== monthKey));
+    try {
+      await fetch(`/api/garden?month_key=${encodeURIComponent(monthKey)}`, {
+        method: "DELETE",
+      });
+    } catch {
+      // Ignore
+    }
   }
 
   if (!authChecked) {
@@ -509,9 +586,47 @@ export default function MemoryGardenApp({
         </div>
       </header>
 
-      {/* Garden Action Bar: Watering Can & Random Flower */}
+      {/* Garden Action Bar: View Toggle, Watering Can & Random Flower */}
       <div className="relative z-10 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2.5">
+          {/* Monthly Shelf / Garden Place Toggle */}
+          <div
+            className={`inline-flex items-center p-1 rounded-2xl border ${
+              isNight
+                ? "bg-[#232B27] border-[#35403A]"
+                : "bg-[#FFFCF7] border-[#E4D9CB]"
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => setViewMode("shelf")}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                viewMode === "shelf"
+                  ? "bg-[#6D8C70] text-white shadow-xs"
+                  : isNight
+                    ? "text-[#B5ACA0] hover:text-white"
+                    : "text-[#6E5C51] hover:text-[#3F322B]"
+              }`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Monthly Shelf</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("garden")}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                viewMode === "garden"
+                  ? "bg-[#6D8C70] text-white shadow-xs"
+                  : isNight
+                    ? "text-[#B5ACA0] hover:text-white"
+                    : "text-[#6E5C51] hover:text-[#3F322B]"
+              }`}
+            >
+              <Trees className="w-3.5 h-3.5" />
+              <span>Garden Place</span>
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={handleWaterGarden}
@@ -598,6 +713,17 @@ export default function MemoryGardenApp({
               />
             ))}
           </div>
+        ) : viewMode === "garden" ? (
+          <GardenPlace
+            year={year}
+            memoriesByMonth={memoriesByMonth}
+            placements={placements}
+            isNight={isNight}
+            isWatered={waterSparkleActive}
+            onSavePlacement={handleSavePlacement}
+            onRemovePlacement={handleRemovePlacement}
+            onOpenMonth={(idx) => setSelectedMonthIndex(idx)}
+          />
         ) : (
           <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
             {MONTHS.map((monthName, monthIndex) => {

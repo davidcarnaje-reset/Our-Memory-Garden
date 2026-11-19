@@ -31,6 +31,15 @@ export interface WateringLog {
   watered_at: string;
 }
 
+export interface GardenPlacement {
+  month_key: string;
+  x_percent: number;
+  y_percent: number;
+  scale: number;
+  updated_by: string;
+  updated_at: string;
+}
+
 export interface MemoryRow extends RowDataPacket {
   id: number;
   memory_date: string;
@@ -65,6 +74,7 @@ export function parseDriveFileIds(
 }
 export interface MemoryReplyRow extends RowDataPacket, MemoryReply {}
 export interface WateringLogRow extends RowDataPacket, WateringLog {}
+export interface GardenPlacementRow extends RowDataPacket, GardenPlacement {}
 
 declare global {
   var __memoryGardenPool: Pool | undefined;
@@ -157,6 +167,17 @@ export async function ensureMemoriesTable(): Promise<void> {
           id INT AUTO_INCREMENT PRIMARY KEY,
           watered_by VARCHAR(50) NOT NULL,
           watered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );`
+      );
+
+      await pool.execute(
+        `CREATE TABLE IF NOT EXISTS garden_placements (
+          month_key VARCHAR(7) PRIMARY KEY,
+          x_percent DOUBLE NOT NULL,
+          y_percent DOUBLE NOT NULL,
+          scale DOUBLE NOT NULL DEFAULT 1,
+          updated_by VARCHAR(50) NOT NULL,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         );`
       );
     })().catch((error) => {
