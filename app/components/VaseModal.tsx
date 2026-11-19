@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import type { Memory, MemoryMood, MemoryReply } from "@/src/lib/db";
+import MemoryPhotoCarousel from "./MemoryPhotoCarousel";
 
 export const MOOD_OPTIONS: {
   value: MemoryMood;
@@ -262,7 +263,7 @@ export default function VaseModal({
     setUploadProgress({ current: 0, total: selectedPhotos.length });
 
     try {
-      const remaining = [...selectedPhotos];
+      const uploadedFileIds: string[] = [];
 
       for (let i = 0; i < selectedPhotos.length; i++) {
         const item = selectedPhotos[i];
@@ -270,33 +271,43 @@ export default function VaseModal({
 
         const compressedImage = await compressImageFile(item.file);
 
-        const formData = new FormData();
-        formData.append("image", compressedImage);
-        formData.append("note", note.trim());
-        formData.append("memory_date", memoryDate);
-        formData.append("uploaded_by", uploadedBy);
-        formData.append("mood", mood);
-        if (isTimeCapsule && unlockDate) {
-          formData.append("unlock_date", unlockDate);
-        }
+        const uploadForm = new FormData();
+        uploadForm.append("image", compressedImage);
+        uploadForm.append("memory_date", memoryDate);
 
-        const res = await fetch("/api/memories", {
+        const uploadRes = await fetch("/api/upload", {
           method: "POST",
-          body: formData,
+          body: uploadForm,
         });
-
-        const data = await res.json();
-        if (!res.ok) {
-          setSelectedPhotos(remaining);
-          setFormError(data.error ?? "Failed to plant memory.");
+        const uploadData = await uploadRes.json();
+        if (!uploadRes.ok || !uploadData.fileId) {
+          setFormError(uploadData.error ?? "Failed to upload photo.");
           return;
         }
-
-        onMemoryCreated(data.memory);
-        URL.revokeObjectURL(item.previewUrl);
-        remaining.shift();
+        uploadedFileIds.push(uploadData.fileId);
       }
 
+      const res = await fetch("/api/memories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          memory_date: memoryDate,
+          note: note.trim(),
+          drive_file_ids: uploadedFileIds,
+          uploaded_by: uploadedBy,
+          mood,
+          unlock_date: isTimeCapsule && unlockDate ? unlockDate : null,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setFormError(data.error ?? "Failed to plant memory.");
+        return;
+      }
+
+      onMemoryCreated(data.memory);
+      selectedPhotos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
       setNote("");
       setIsTimeCapsule(false);
       setSelectedPhotos([]);
@@ -493,14 +504,16 @@ export default function VaseModal({
                           </p>
                         </div>
                       ) : (
-                        <div className="bg-[#EFE6D8] relative">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={`/api/image/${memory.drive_file_id}`}
-                            alt={memory.note.slice(0, 80)}
-                            className="w-full max-h-[380px] object-cover"
-                          />
-                        </div>
+                        <MemoryPhotoCarousel
+                          fileIds={
+                            memory.drive_file_ids?.length
+                              ? memory.drive_file_ids
+                              : memory.drive_file_id
+                                ? [memory.drive_file_id]
+                                : []
+                          }
+                          alt={memory.note.slice(0, 80)}
+                        />
                       )}
 
                       <div className="p-4 sm:p-5">
@@ -877,18 +890,14 @@ export default function VaseModal({
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span>
                       {uploadProgress && uploadProgress.total > 1
-                        ? `Planting ${uploadProgress.current} of ${uploadProgress.total} memories...`
+                        ? `Uploading photo ${uploadProgress.current} of ${uploadProgress.total}...`
                         : "Planting memory..."}
                     </span>
                   </>
                 ) : (
                   <>
                     <Flower2 className="w-4 h-4" />
-                    <span>
-                      {selectedPhotos.length > 1
-                        ? `Plant ${selectedPhotos.length} Memories in ${monthName}`
-                        : `Plant Memory in ${monthName}`}
-                    </span>
+                    <span>Plant Memory in {monthName}</span>
                   </>
                 )}
               </button>

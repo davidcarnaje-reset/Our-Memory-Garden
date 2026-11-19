@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ResultSetHeader } from "mysql2/promise";
 import { getAuthenticatedSession } from "@/src/lib/auth";
-import { ensureMemoriesTable, getDbPool, MemoryRow } from "@/src/lib/db";
+import {
+  ensureMemoriesTable,
+  getDbPool,
+  MemoryRow,
+  parseDriveFileIds,
+} from "@/src/lib/db";
 import { deleteImageFromDrive } from "@/src/lib/googleDrive";
 
 export async function DELETE(
@@ -24,7 +29,7 @@ export async function DELETE(
     const pool = getDbPool();
 
     const [existingRows] = await pool.execute<MemoryRow[]>(
-      `SELECT drive_file_id FROM memories WHERE id = ?`,
+      `SELECT drive_file_id, drive_file_ids FROM memories WHERE id = ?`,
       [memoryId]
     );
 
@@ -32,7 +37,10 @@ export async function DELETE(
       return NextResponse.json({ error: "Memory not found." }, { status: 404 });
     }
 
-    const driveFileId = existingRows[0].drive_file_id;
+    const fileIdsToDelete = parseDriveFileIds(
+      existingRows[0].drive_file_ids,
+      existingRows[0].drive_file_id
+    );
 
     const [deleteResult] = await pool.execute<ResultSetHeader>(
       `DELETE FROM memories WHERE id = ?`,
@@ -45,8 +53,8 @@ export async function DELETE(
 
     await pool.execute(`DELETE FROM memory_replies WHERE memory_id = ?`, [memoryId]);
 
-    // Best-effort cleanup in Google Drive
-    await deleteImageFromDrive(driveFileId);
+    // Best-effort cleanup of all attached photos in Google Drive
+    await Promise.all(fileIdsToDelete.map((fid) => deleteImageFromDrive(fid)));
 
     return NextResponse.json({ ok: true, id: memoryId });
   } catch (error) {

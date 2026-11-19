@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import type { Memory, MemoryReply, WateringLog } from "@/src/lib/db";
+import MemoryPhotoCarousel from "./MemoryPhotoCarousel";
 import PasscodeGate from "./PasscodeGate";
 import VaseIllustration from "./VaseIllustration";
 import VaseModal, { MOOD_OPTIONS } from "./VaseModal";
@@ -730,14 +731,18 @@ export default function MemoryGardenApp({
               </button>
             </div>
 
-            <div className="bg-[#EFE6D8]">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={`/api/image/${spotlightMemory.drive_file_id}`}
-                alt={spotlightMemory.note.slice(0, 80)}
-                className="w-full max-h-80 object-cover"
-              />
-            </div>
+            <MemoryPhotoCarousel
+              key={spotlightMemory.id}
+              fileIds={
+                spotlightMemory.drive_file_ids?.length
+                  ? spotlightMemory.drive_file_ids
+                  : spotlightMemory.drive_file_id
+                    ? [spotlightMemory.drive_file_id]
+                    : []
+              }
+              alt={spotlightMemory.note.slice(0, 80)}
+              maxHeightClass="max-h-80"
+            />
 
             <div className="p-5 space-y-3">
               <div className="flex flex-wrap items-center gap-2 text-xs">

@@ -17,6 +17,7 @@ export interface Memory {
   month_key: string;
   note: string;
   drive_file_id: string;
+  drive_file_ids: string[];
   uploaded_by: string;
   mood: MemoryMood;
   unlock_date: string | null;
@@ -30,7 +31,38 @@ export interface WateringLog {
   watered_at: string;
 }
 
-export interface MemoryRow extends RowDataPacket, Memory {}
+export interface MemoryRow extends RowDataPacket {
+  id: number;
+  memory_date: string;
+  month_key: string;
+  note: string;
+  drive_file_id: string;
+  drive_file_ids: string | null;
+  uploaded_by: string;
+  mood: MemoryMood;
+  unlock_date: string | null;
+  created_at: string;
+}
+
+export function parseDriveFileIds(
+  rawJson: string | null | undefined,
+  fallbackId: string
+): string[] {
+  if (rawJson) {
+    try {
+      const parsed = JSON.parse(rawJson);
+      if (Array.isArray(parsed)) {
+        const clean = parsed.filter(
+          (id): id is string => typeof id === "string" && id.trim().length > 0
+        );
+        if (clean.length > 0) return clean;
+      }
+    } catch {
+      // Fallback to single drive_file_id
+    }
+  }
+  return fallbackId ? [fallbackId] : [];
+}
 export interface MemoryReplyRow extends RowDataPacket, MemoryReply {}
 export interface WateringLogRow extends RowDataPacket, WateringLog {}
 
@@ -100,6 +132,11 @@ export async function ensureMemoriesTable(): Promise<void> {
       if (!colNames.has("unlock_date")) {
         await pool.execute(
           `ALTER TABLE memories ADD COLUMN unlock_date DATE NULL`
+        );
+      }
+      if (!colNames.has("drive_file_ids")) {
+        await pool.execute(
+          `ALTER TABLE memories ADD COLUMN drive_file_ids TEXT NULL`
         );
       }
 

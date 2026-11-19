@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedSession } from "@/src/lib/auth";
-import { ensureMemoriesTable, getDbPool, MemoryRow } from "@/src/lib/db";
+import {
+  ensureMemoriesTable,
+  getDbPool,
+  MemoryRow,
+  parseDriveFileIds,
+} from "@/src/lib/db";
 
 export async function GET() {
   const session = await getAuthenticatedSession();
@@ -14,7 +19,7 @@ export async function GET() {
     const today = new Date().toISOString().slice(0, 10);
 
     const [rows] = await pool.execute<MemoryRow[]>(
-      `SELECT id, memory_date, month_key, note, drive_file_id, uploaded_by, mood, unlock_date, created_at
+      `SELECT id, memory_date, month_key, note, drive_file_id, drive_file_ids, uploaded_by, mood, unlock_date, created_at
        FROM memories
        WHERE unlock_date IS NULL OR unlock_date <= ?
        ORDER BY RAND()
@@ -22,7 +27,17 @@ export async function GET() {
       [today]
     );
 
-    return NextResponse.json({ memory: rows[0] ?? null });
+    const row = rows[0];
+    if (!row) {
+      return NextResponse.json({ memory: null });
+    }
+
+    return NextResponse.json({
+      memory: {
+        ...row,
+        drive_file_ids: parseDriveFileIds(row.drive_file_ids, row.drive_file_id),
+      },
+    });
   } catch (error) {
     console.error("GET /api/memories/random error:", error);
     return NextResponse.json(
