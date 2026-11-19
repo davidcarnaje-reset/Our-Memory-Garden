@@ -85,6 +85,7 @@ export async function POST(request: NextRequest) {
       buffer,
       mimeType: image.type || "image/jpeg",
       fileName: safeFileName,
+      memoryDate,
     });
 
     await ensureMemoriesTable();

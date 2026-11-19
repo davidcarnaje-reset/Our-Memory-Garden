@@ -27,32 +27,102 @@ function getDriveClient() {
   return google.drive({ version: "v3", auth: oauth2Client });
 }
 
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
+
 export interface UploadImageParams {
   buffer: Buffer;
   mimeType: string;
   fileName: string;
+  memoryDate?: string; // YYYY-MM-DD
+}
+
+async function findOrCreateFolder(
+  drive: ReturnType<typeof google.drive>,
+  parentId: string,
+  folderName: string
+): Promise<string> {
+  const escapedName = folderName.replace(/'/g, "\\'");
+  const query = [
+    `name = '${escapedName}'`,
+    "mimeType = 'application/vnd.google-apps.folder'",
+    `'${parentId}' in parents`,
+    "trashed = false",
+  ].join(" and ");
+
+  const listRes = await drive.files.list({
+    q: query,
+    fields: "files(id, name)",
+    spaces: "drive",
+    pageSize: 1,
+  });
+
+  const existingId = listRes.data.files?.[0]?.id;
+  if (existingId) {
+    return existingId;
+  }
+
+  const createRes = await drive.files.create({
+    requestBody: {
+      name: folderName,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [parentId],
+    },
+    fields: "id",
+  });
+
+  const newId = createRes.data.id;
+  if (!newId) {
+    throw new Error(`Failed to create Google Drive folder "${folderName}".`);
+  }
+  return newId;
 }
 
 /**
- * Uploads an image buffer to the configured Google Drive folder.
+ * Uploads an image buffer to `<GOOGLE_DRIVE_FOLDER_ID>/<Year>/<MonthName>` (when memoryDate is provided).
  * Files remain private (restricted access) and are served through our authenticated proxy route.
  */
 export async function uploadImageToDrive({
   buffer,
   mimeType,
   fileName,
+  memoryDate,
 }: UploadImageParams): Promise<string> {
-  const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
-  if (!folderId) {
+  const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  if (!rootFolderId) {
     throw new Error("GOOGLE_DRIVE_FOLDER_ID environment variable is not configured.");
   }
 
   const drive = getDriveClient();
 
+  let targetFolderId = rootFolderId;
+  if (memoryDate && /^\d{4}-\d{2}-\d{2}$/.test(memoryDate)) {
+    const year = memoryDate.slice(0, 4);
+    const monthIndex = Number(memoryDate.slice(5, 7)) - 1;
+    const monthName = MONTH_NAMES[monthIndex];
+
+    if (monthName) {
+      const yearFolderId = await findOrCreateFolder(drive, rootFolderId, year);
+      targetFolderId = await findOrCreateFolder(drive, yearFolderId, monthName);
+    }
+  }
+
   const createResponse = await drive.files.create({
     requestBody: {
       name: fileName,
-      parents: [folderId],
+      parents: [targetFolderId],
     },
     media: {
       mimeType: mimeType || "image/jpeg",
