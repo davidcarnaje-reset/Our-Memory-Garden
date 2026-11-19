@@ -40,6 +40,26 @@ export interface GardenPlacement {
   updated_at: string;
 }
 
+export interface GardenStats {
+  id: number;
+  current_streak: number;
+  longest_streak: number;
+  last_watered_date: string | null;
+  last_watered_by: string | null;
+  partner_watered_today: boolean;
+  vase_shards: number;
+}
+
+export interface UnlockedVase {
+  vase_code: string;
+  unlocked_at: string;
+}
+
+export interface MonthVaseEquip {
+  month_key: string;
+  vase_code: string;
+}
+
 export interface MemoryRow extends RowDataPacket {
   id: number;
   memory_date: string;
@@ -75,6 +95,17 @@ export function parseDriveFileIds(
 export interface MemoryReplyRow extends RowDataPacket, MemoryReply {}
 export interface WateringLogRow extends RowDataPacket, WateringLog {}
 export interface GardenPlacementRow extends RowDataPacket, GardenPlacement {}
+export interface GardenStatsRow extends RowDataPacket {
+  id: number;
+  current_streak: number;
+  longest_streak: number;
+  last_watered_date: string | null;
+  last_watered_by: string | null;
+  partner_watered_today: number | boolean;
+  vase_shards: number;
+}
+export interface UnlockedVaseRow extends RowDataPacket, UnlockedVase {}
+export interface MonthVaseEquipRow extends RowDataPacket, MonthVaseEquip {}
 
 declare global {
   var __memoryGardenPool: Pool | undefined;
@@ -178,6 +209,37 @@ export async function ensureMemoriesTable(): Promise<void> {
           scale DOUBLE NOT NULL DEFAULT 1,
           updated_by VARCHAR(50) NOT NULL,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        );`
+      );
+
+      await pool.execute(
+        `CREATE TABLE IF NOT EXISTS garden_stats (
+          id INT PRIMARY KEY DEFAULT 1,
+          current_streak INT DEFAULT 0,
+          longest_streak INT DEFAULT 0,
+          last_watered_date DATE NULL,
+          last_watered_by VARCHAR(50) NULL,
+          partner_watered_today BOOLEAN DEFAULT FALSE,
+          vase_shards INT DEFAULT 0
+        );`
+      );
+
+      await pool.execute(
+        `INSERT IGNORE INTO garden_stats (id, current_streak, longest_streak, partner_watered_today, vase_shards)
+         VALUES (1, 0, 0, FALSE, 0);`
+      );
+
+      await pool.execute(
+        `CREATE TABLE IF NOT EXISTS unlocked_vases (
+          vase_code VARCHAR(50) PRIMARY KEY,
+          unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );`
+      );
+
+      await pool.execute(
+        `CREATE TABLE IF NOT EXISTS month_vase_equip (
+          month_key VARCHAR(7) PRIMARY KEY,
+          vase_code VARCHAR(50) NOT NULL
         );`
       );
     })().catch((error) => {

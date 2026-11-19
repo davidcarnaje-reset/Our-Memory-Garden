@@ -6,12 +6,15 @@ import {
   ChevronLeft,
   ChevronRight,
   Droplets,
+  Flame,
   Flower2,
+  Gem,
   Heart,
   LayoutGrid,
   Loader2,
   LogOut,
   Moon,
+  Palette,
   Shuffle,
   Sparkles,
   Sun,
@@ -21,13 +24,17 @@ import {
 } from "lucide-react";
 import type {
   GardenPlacement,
+  GardenStats,
   Memory,
   MemoryReply,
   WateringLog,
 } from "@/src/lib/db";
+import { SPECIAL_VASES, STARTER_VASE } from "@/src/lib/vaseCatalog";
 import GardenPlace, { type GardenTheme } from "./GardenPlace";
 import MemoryPhotoCarousel from "./MemoryPhotoCarousel";
+import MonthVasePickerModal from "./MonthVasePickerModal";
 import PasscodeGate from "./PasscodeGate";
+import VaseBoutiqueModal from "./VaseBoutiqueModal";
 import VaseIllustration, { type PlantHealth } from "./VaseIllustration";
 import VaseModal, { MOOD_OPTIONS } from "./VaseModal";
 
@@ -62,22 +69,6 @@ type AmbienceMode = "auto" | "day" | "night";
 function isNightHour(): boolean {
   const hour = new Date().getHours();
   return hour >= 18 || hour < 6;
-}
-
-function formatWateredTime(timestampStr: string): string {
-  const normalized = timestampStr.includes("T")
-    ? timestampStr
-    : timestampStr.replace(" ", "T") + "Z";
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) return timestampStr;
-
-  const diffMs = Date.now() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function formatSpotlightDate(dateStr: string): string {
@@ -178,6 +169,30 @@ export default function MemoryGardenApp({
   // View Mode: Monthly Shelf vs Garden Place
   const [viewMode, setViewMode] = useState<"shelf" | "garden">("shelf");
   const [placements, setPlacements] = useState<GardenPlacement[]>([]);
+
+  // Gamified Streak & Vase Boutique State
+  const [gardenStats, setGardenStats] = useState<GardenStats>({
+    id: 1,
+    current_streak: 0,
+    longest_streak: 0,
+    last_watered_date: null,
+    last_watered_by: null,
+    partner_watered_today: false,
+    vase_shards: 0,
+  });
+  const [unlockedVases, setUnlockedVases] = useState<string[]>([]);
+  const [equippedVases, setEquippedVases] = useState<Record<string, string>>(
+    {}
+  );
+  const [isBoutiqueOpen, setIsBoutiqueOpen] = useState(false);
+  const [customizingMonthIndex, setCustomizingMonthIndex] = useState<
+    number | null
+  >(null);
+  const [gardenToast, setGardenToast] = useState<{
+    title: string;
+    subtitle: string;
+    isMilestone?: boolean;
+  } | null>(null);
   const [gardenTheme, setGardenTheme] = useState<GardenTheme>(() => {
     if (typeof window === "undefined") return "peaceful";
     try {
@@ -268,10 +283,11 @@ export default function MemoryGardenApp({
     let cancelled = false;
     async function load() {
       try {
-        const [memRes, waterRes, gardenRes] = await Promise.all([
+        const [memRes, waterRes, gardenRes, statusRes] = await Promise.all([
           fetch(`/api/memories?year=${year}`, { cache: "no-store" }),
           fetch("/api/water", { cache: "no-store" }),
           fetch(`/api/garden?year=${year}`, { cache: "no-store" }),
+          fetch(`/api/garden/status?year=${year}`, { cache: "no-store" }),
         ]);
         if (cancelled) return;
         if (memRes.status === 401) {
@@ -300,6 +316,17 @@ export default function MemoryGardenApp({
           const gardenData = await gardenRes.json();
           if (Array.isArray(gardenData.placements)) {
             setPlacements(gardenData.placements);
+          }
+        }
+
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          if (statusData.stats) setGardenStats(statusData.stats);
+          if (Array.isArray(statusData.unlockedVases)) {
+            setUnlockedVases(statusData.unlockedVases);
+          }
+          if (statusData.equippedVases) {
+            setEquippedVases(statusData.equippedVases);
           }
         }
       } catch {
@@ -334,7 +361,7 @@ export default function MemoryGardenApp({
     setIsWatering(true);
     setWaterSparkleActive(true);
     try {
-      const res = await fetch("/api/water", {
+      const res = await fetch("/api/garden/water", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ wateredBy: uploadedBy }),
@@ -343,10 +370,71 @@ export default function MemoryGardenApp({
       if (res.ok) {
         if (data.latest) setWateringLog(data.latest);
         if (data.latestByPartner) setLatestByPartner(data.latestByPartner);
+        if (data.stats) setGardenStats(data.stats);
+
+        if (data.milestoneReached) {
+          setGardenToast({
+            title: `${data.stats.current_streak}-Day Streak! +5 Vase Shards earned!`,
+            subtitle: "Celebrate in the Vase Boutique to unlock a special vase!",
+            isMilestone: true,
+          });
+          setTimeout(() => setGardenToast(null), 5500);
+        } else if (data.coopBonusAwarded) {
+          setGardenToast({
+            title: "Co-op Bonus! +1 Vase Shard earned!",
+            subtitle: "You both watered the garden together today.",
+          });
+          setTimeout(() => setGardenToast(null), 4000);
+        } else if (data.alreadyWatered) {
+          setGardenToast({
+            title: "Already watered today",
+            subtitle:
+              data.stats?.partner_watered_today
+                ? "Both of you have watered the garden today!"
+                : "Wait for your partner to water today for a +1 Co-op Shard!",
+          });
+          setTimeout(() => setGardenToast(null), 3500);
+        }
       }
     } finally {
       setIsWatering(false);
       setTimeout(() => setWaterSparkleActive(false), 2600);
+    }
+  }
+
+  async function handleUnlockVase(vaseCode: string) {
+    const res = await fetch("/api/garden/unlock-vase", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vase_code: vaseCode }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error ?? "Failed to unlock vase.");
+    }
+    if (data.stats) setGardenStats(data.stats);
+    if (data.unlockedCode) {
+      setUnlockedVases((prev) =>
+        prev.includes(data.unlockedCode) ? prev : [...prev, data.unlockedCode]
+      );
+    }
+  }
+
+  async function handleEquipVase(monthKey: string, vaseCode: string) {
+    const res = await fetch("/api/garden/equip-vase", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ month_key: monthKey, vase_code: vaseCode }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error ?? "Failed to equip vase.");
+    }
+    if (data.equipped) {
+      setEquippedVases((prev) => ({
+        ...prev,
+        [data.equipped.month_key]: data.equipped.vase_code,
+      }));
     }
   }
 
@@ -666,8 +754,57 @@ export default function MemoryGardenApp({
         </div>
       </header>
 
-      {/* Garden Action Bar: View Toggle, Watering Can & Random Flower */}
-      <div className="relative z-10 max-w-6xl w-full mx-auto px-3.5 sm:px-6 pt-4 sm:pt-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+      {/* Garden Action Bar: View Toggle, Streak HUD, Watering Can & Boutique */}
+      <div className="relative z-10 max-w-6xl w-full mx-auto px-3.5 sm:px-6 pt-4 sm:pt-6 flex flex-col gap-3">
+        {/* Streak, Shards & Boutique HUD Strip */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border text-xs font-semibold ${
+                isNight
+                  ? "bg-[#2B2520] border-[#4A3B2E] text-[#F9C67C]"
+                  : "bg-[#FFF7EA] border-[#F0D9B5] text-[#9C5D18]"
+              }`}
+            >
+              <Flame className="w-3.5 h-3.5 text-[#E57A3C] fill-[#E57A3C]" />
+              <span>
+                {gardenStats.current_streak}{" "}
+                {gardenStats.current_streak === 1 ? "Day" : "Days"} Streak
+              </span>
+            </span>
+
+            <span
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border text-xs font-semibold ${
+                isNight
+                  ? "bg-[#1F2C36] border-[#334A5C] text-[#9FD2F5]"
+                  : "bg-[#EEF6FB] border-[#C9E0F0] text-[#2F5E82]"
+              }`}
+            >
+              <Gem className="w-3.5 h-3.5 text-[#4EA0D8]" />
+              <span>
+                {gardenStats.vase_shards}{" "}
+                {gardenStats.vase_shards === 1 ? "Shard" : "Shards"}
+              </span>
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsBoutiqueOpen(true)}
+            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl border text-xs font-semibold transition cursor-pointer ${
+              isNight
+                ? "bg-[#2A2635] border-[#453E59] text-[#DFCEFA] hover:bg-[#342F42]"
+                : "bg-[#F6F0FC] border-[#DFD2F0] text-[#5F438A] hover:bg-[#ECE2F7]"
+            }`}
+          >
+            <span>🏺 Vase Boutique</span>
+            <span className="px-1.5 py-0.5 rounded-full bg-white/70 text-[#4B346E] text-[10px]">
+              {unlockedVases.length}/{SPECIAL_VASES.length}
+            </span>
+          </button>
+        </div>
+
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
           {/* Monthly Shelf / Garden Place Toggle */}
           <div
@@ -800,6 +937,7 @@ export default function MemoryGardenApp({
             {spotlightEmpty ? "No unlocked flowers yet!" : "Pick a Random Flower"}
           </span>
         </button>
+        </div>
       </div>
 
       {/* Main Garden Shelf Grid */}
@@ -835,6 +973,7 @@ export default function MemoryGardenApp({
             year={year}
             memoriesByMonth={memoriesByMonth}
             placements={placements}
+            equippedVases={equippedVases}
             isNight={isNight}
             isWatered={waterSparkleActive}
             plantHealth={plantHealth}
@@ -855,21 +994,47 @@ export default function MemoryGardenApp({
               const count = monthMemories.length;
 
               return (
-                <button
+                <div
                   key={monthKey}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedMonthIndex(monthIndex)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedMonthIndex(monthIndex);
+                    }
+                  }}
                   className={`group relative flex flex-col items-center justify-between rounded-2xl sm:rounded-3xl border p-3 sm:p-5 hover:-translate-y-1 transition-all duration-300 cursor-pointer text-center ${
                     isNight
                       ? "bg-[#232B27]/90 border-[#35403A] hover:border-[#56695E] shadow-[0_12px_30px_-14px_rgba(0,0,0,0.6)]"
                       : "bg-[#FFFCF7] border-[#E7DDD0] hover:border-[#C8B8A4] shadow-[0_8px_24px_-12px_rgba(74,59,50,0.12)] hover:shadow-[0_18px_36px_-14px_rgba(74,59,50,0.2)]"
                   }`}
                 >
+                  {/* Upper-right Customize Vase Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCustomizingMonthIndex(monthIndex);
+                    }}
+                    title={`Customize ${monthName} vase`}
+                    aria-label={`Customize ${monthName} vase`}
+                    className={`absolute top-2.5 right-2.5 sm:top-3 sm:right-3 z-10 p-1.5 sm:p-2 rounded-full border transition cursor-pointer ${
+                      isNight
+                        ? "bg-[#1D2420]/80 border-[#39453E] text-[#C5BCB0] hover:text-white hover:border-[#6D8C70]"
+                        : "bg-[#FAF6F0]/90 border-[#E4D9CB] text-[#7A685D] hover:text-[#C87A65] hover:border-[#C87A65]"
+                    }`}
+                  >
+                    <Palette className="w-3.5 h-3.5" />
+                  </button>
+
                   {/* Vase SVG Stage */}
                   <div className="w-full max-w-[148px] mx-auto pt-1 transition-transform duration-300 group-hover:scale-[1.03]">
                     <VaseIllustration
                       flowers={monthMemories}
                       monthIndex={monthIndex}
+                      vaseCode={equippedVases[monthKey]}
                       isWatered={waterSparkleActive}
                       plantHealth={plantHealth}
                     />
@@ -911,7 +1076,7 @@ export default function MemoryGardenApp({
                       {count} {count === 1 ? "flower" : "flowers"}
                     </span>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -989,7 +1154,7 @@ export default function MemoryGardenApp({
                     : []
               }
               alt={spotlightMemory.note.slice(0, 80)}
-              maxHeightClass="max-h-80"
+              maxHeightClass="h-72 sm:h-80"
               isGrayscale={plantHealth === "withered"}
             />
 
@@ -1032,6 +1197,72 @@ export default function MemoryGardenApp({
                 <span>Pick Another Random Flower</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Vase Boutique Modal */}
+      <VaseBoutiqueModal
+        isOpen={isBoutiqueOpen}
+        vaseShards={gardenStats.vase_shards}
+        unlockedVases={unlockedVases}
+        onClose={() => setIsBoutiqueOpen(false)}
+        onUnlockVase={handleUnlockVase}
+      />
+
+      {/* Per-Month Unlocked Vase Picker Modal */}
+      {customizingMonthIndex !== null && (
+        <MonthVasePickerModal
+          isOpen={customizingMonthIndex !== null}
+          monthName={MONTHS[customizingMonthIndex]}
+          year={year}
+          monthIndex={customizingMonthIndex}
+          monthKey={`${year}-${String(customizingMonthIndex + 1).padStart(2, "0")}`}
+          currentVaseCode={
+            equippedVases[
+              `${year}-${String(customizingMonthIndex + 1).padStart(2, "0")}`
+            ] ?? STARTER_VASE.code
+          }
+          unlockedVases={unlockedVases}
+          onClose={() => setCustomizingMonthIndex(null)}
+          onEquipVase={handleEquipVase}
+          onOpenBoutique={() => setIsBoutiqueOpen(true)}
+        />
+      )}
+
+      {/* Streak Milestone & Co-op Toast */}
+      {gardenToast && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-md animate-bloom-in">
+          <div
+            className={`rounded-2xl border px-4 py-3.5 shadow-xl flex items-start justify-between gap-3 ${
+              gardenToast.isMilestone
+                ? "bg-gradient-to-r from-[#FFF6E0] via-[#FFFCF2] to-[#FCEBF0] border-[#E8C57B] text-[#4A3525]"
+                : "bg-[#FFFCF7] border-[#D9E5EC] text-[#3F322B]"
+            }`}
+          >
+            <div className="flex items-start gap-2.5">
+              <Sparkles
+                className={`w-5 h-5 shrink-0 mt-0.5 ${
+                  gardenToast.isMilestone ? "text-[#D99A26]" : "text-[#4EA0D8]"
+                }`}
+              />
+              <div>
+                <p className="text-xs sm:text-sm font-bold">
+                  {gardenToast.title}
+                </p>
+                <p className="text-[11px] opacity-80 mt-0.5">
+                  {gardenToast.subtitle}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setGardenToast(null)}
+              aria-label="Dismiss notification"
+              className="p-1 rounded-full hover:bg-black/5 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
       )}

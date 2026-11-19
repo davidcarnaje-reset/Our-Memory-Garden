@@ -43,6 +43,7 @@ interface GardenPlaceProps {
   year: number;
   memoriesByMonth: Record<string, Memory[]>;
   placements: GardenPlacement[];
+  equippedVases?: Record<string, string>;
   isNight: boolean;
   isWatered: boolean;
   plantHealth: PlantHealth;
@@ -62,6 +63,7 @@ export default function GardenPlace({
   year,
   memoriesByMonth,
   placements,
+  equippedVases = {},
   isNight,
   isWatered,
   plantHealth,
@@ -573,6 +575,7 @@ export default function GardenPlace({
               <VaseIllustration
                 flowers={monthMemories}
                 monthIndex={monthIdx}
+                vaseCode={equippedVases[placement.month_key]}
                 isWatered={isWatered}
                 plantHealth={plantHealth}
               />

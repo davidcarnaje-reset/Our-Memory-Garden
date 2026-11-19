@@ -1,7 +1,31 @@
 "use client";
 
-import React from "react";
+import React, { useId } from "react";
 import type { MemoryMood } from "@/src/lib/db";
+import {
+  getVaseByCode,
+  type VaseCatalogItem,
+  type VasePattern,
+} from "@/src/lib/vaseCatalog";
+
+type VaseShape = "classic" | "amphora" | "chalice" | "faceted" | "lantern";
+
+function getVaseShape(vase: Partial<VaseCatalogItem>): VaseShape {
+  const code = vase.code ?? "";
+  if (vase.pattern === "crystal" || vase.pattern === "stained") {
+    return "faceted";
+  }
+  if (vase.pattern === "royal" || vase.pattern === "kintsugi") {
+    return code.includes("kintsugi") ? "classic" : "chalice";
+  }
+  if (vase.pattern === "stars" || vase.pattern === "moon" || vase.pattern === "aurora") {
+    return code.includes("lantern") ? "lantern" : "amphora";
+  }
+  if (vase.pattern === "floral" || vase.pattern === "striped") {
+    return "amphora";
+  }
+  return "classic";
+}
 
 export interface VaseFlowerItem {
   mood?: MemoryMood;
@@ -14,6 +38,7 @@ interface VaseIllustrationProps {
   count?: number;
   flowers?: VaseFlowerItem[];
   monthIndex: number; // 0-11
+  vaseCode?: string | null;
   isWatered?: boolean;
   plantHealth?: PlantHealth;
   className?: string;
@@ -298,14 +323,155 @@ function buildBouquetSpecs(
   return specs.sort((a, b) => a.endY - b.endY);
 }
 
+function renderVasePattern(pattern: VasePattern, accent: string) {
+  switch (pattern) {
+    case "speckled":
+      return (
+        <g fill={accent} opacity="0.55">
+          <circle cx="72" cy="154" r="1.4" />
+          <circle cx="95" cy="148" r="1.2" />
+          <circle cx="108" cy="162" r="1.6" />
+          <circle cx="64" cy="172" r="1.3" />
+          <circle cx="84" cy="178" r="1.5" />
+          <circle cx="102" cy="182" r="1.2" />
+          <circle cx="116" cy="152" r="1.1" />
+          <circle cx="78" cy="164" r="1.1" />
+        </g>
+      );
+    case "ripple":
+      return (
+        <g fill="none" stroke={accent} strokeWidth="1.4" opacity="0.5">
+          <path d="M 55,152 Q 90,157 125,152" />
+          <path d="M 51,164 Q 90,169 129,164" />
+          <path d="M 53,176 Q 90,181 127,176" />
+        </g>
+      );
+    case "striped":
+      return (
+        <g fill="none" stroke={accent} strokeWidth="3" opacity="0.45">
+          <path d="M 56,154 Q 90,160 124,154" />
+          <path d="M 52,172 Q 90,178 128,172" />
+        </g>
+      );
+    case "floral":
+      return (
+        <g opacity="0.8">
+          {[
+            { x: 76, y: 158 },
+            { x: 102, y: 170 },
+          ].map((pos, idx) => (
+            <g key={idx} transform={`translate(${pos.x}, ${pos.y})`}>
+              {[0, 72, 144, 216, 288].map((a) => (
+                <circle
+                  key={a}
+                  cx="0"
+                  cy="-4"
+                  r="2.6"
+                  fill={accent}
+                  transform={`rotate(${a})`}
+                />
+              ))}
+              <circle cx="0" cy="0" r="2" fill="#F8E184" />
+            </g>
+          ))}
+        </g>
+      );
+    case "stained":
+      return (
+        <g fill="none" stroke={accent} strokeWidth="1.5" opacity="0.6">
+          <path d="M 64,142 L 78,165 L 62,188" />
+          <path d="M 90,140 L 78,165 L 102,168 L 116,142" />
+          <path d="M 78,165 L 92,193" />
+          <path d="M 102,168 L 118,187" />
+        </g>
+      );
+    case "crystal":
+      return (
+        <g fill={accent} opacity="0.32">
+          <polygon points="70,142 86,162 66,184 54,166" />
+          <polygon points="104,145 122,166 108,188 92,166" />
+        </g>
+      );
+    case "stars":
+      return (
+        <g fill={accent} opacity="0.9">
+          {[
+            { x: 72, y: 156, s: 1 },
+            { x: 104, y: 152, s: 0.85 },
+            { x: 88, y: 174, s: 1.1 },
+            { x: 65, y: 176, s: 0.7 },
+            { x: 112, y: 174, s: 0.75 },
+          ].map((st, idx) => (
+            <path
+              key={idx}
+              d={`M ${st.x},${st.y - 4 * st.s} L ${st.x + 1.2 * st.s},${st.y - 1.2 * st.s} L ${st.x + 4 * st.s},${st.y} L ${st.x + 1.2 * st.s},${st.y + 1.2 * st.s} L ${st.x},${st.y + 4 * st.s} L ${st.x - 1.2 * st.s},${st.y + 1.2 * st.s} L ${st.x - 4 * st.s},${st.y} L ${st.x - 1.2 * st.s},${st.y - 1.2 * st.s} Z`}
+            />
+          ))}
+        </g>
+      );
+    case "moon":
+      return (
+        <g opacity="0.9">
+          <circle cx="90" cy="166" r="10" fill={accent} />
+          <circle cx="95" cy="163" r="8.5" fill="rgba(40, 28, 56, 0.85)" />
+          <circle cx="70" cy="154" r="1.4" fill={accent} />
+          <circle cx="111" cy="176" r="1.4" fill={accent} />
+        </g>
+      );
+    case "aurora":
+      return (
+        <g fill="none" stroke={accent} strokeWidth="4" strokeLinecap="round" opacity="0.45">
+          <path d="M 58,154 Q 88,144 122,160" />
+          <path d="M 55,172 Q 92,162 124,178" />
+        </g>
+      );
+    case "kintsugi":
+      return (
+        <g fill="none" stroke={accent} strokeWidth="2" strokeLinecap="round" opacity="0.92">
+          <path d="M 68,140 L 82,158 L 76,174 L 94,192" />
+          <path d="M 82,158 L 106,164 L 122,154" />
+          <path d="M 76,174 L 58,180" />
+        </g>
+      );
+    case "marble":
+      return (
+        <g fill="none" stroke={accent} strokeWidth="1.6" opacity="0.45">
+          <path d="M 64,144 Q 82,158 72,174 T 96,192" />
+          <path d="M 106,144 Q 94,162 114,178" />
+        </g>
+      );
+    case "royal":
+      return (
+        <g fill="none" stroke={accent} strokeWidth="1.8" opacity="0.82">
+          <path d="M 52,164 Q 90,172 128,164" />
+          <path d="M 54,169 Q 90,177 126,169" />
+          <circle cx="90" cy="168" r="3" fill={accent} />
+        </g>
+      );
+    case "band":
+    default:
+      return (
+        <path
+          d="M 52,167 Q 90,173 128,167"
+          fill="none"
+          stroke={accent}
+          strokeWidth="1.4"
+          opacity="0.45"
+        />
+      );
+  }
+}
+
 export default function VaseIllustration({
   count,
   flowers,
   monthIndex,
+  vaseCode,
   isWatered = false,
   plantHealth = "fresh",
   className = "",
 }: VaseIllustrationProps) {
+  const uid = useId().replace(/:/g, "");
   const resolvedItems: VaseFlowerItem[] =
     flowers ??
     Array.from({ length: count ?? 0 }, (_, idx) => ({
@@ -313,7 +479,42 @@ export default function VaseIllustration({
       unlock_date: null,
     }));
 
-  const vase = VASE_PALETTES[monthIndex % VASE_PALETTES.length];
+  const specialVase = getVaseByCode(vaseCode);
+  const fallbackPalette = VASE_PALETTES[monthIndex % VASE_PALETTES.length];
+  const vase = specialVase ?? {
+    code: "starter_classic",
+    body: fallbackPalette.body,
+    gradientTo: fallbackPalette.shade,
+    shade: fallbackPalette.shade,
+    rim: fallbackPalette.rim,
+    highlight: fallbackPalette.highlight,
+    accent: fallbackPalette.highlight,
+    pattern: "band" as VasePattern,
+    isGlass: false,
+    glowColor: undefined,
+  };
+  const shape = getVaseShape(vase);
+  const gradId = `vaseGrad-${uid}`;
+  const glowId = `vaseGlow-${uid}`;
+
+  // Distinct artistic silhouettes
+  const bodyPath =
+    shape === "amphora"
+      ? "M 70,134 C 69,144 50,152 52,172 C 54,188 68,195 90,195 C 112,195 126,188 128,172 C 130,152 111,144 110,134 Z"
+      : shape === "chalice"
+        ? "M 62,134 C 58,150 64,170 78,178 L 76,188 L 62,194 L 118,194 L 104,188 L 102,178 C 116,170 122,150 118,134 Z"
+        : shape === "faceted"
+          ? "M 66,134 L 50,158 L 58,188 L 76,195 L 104,195 L 122,188 L 130,158 L 114,134 Z"
+          : shape === "lantern"
+            ? "M 66,134 L 54,150 L 54,184 L 68,195 L 112,195 L 126,184 L 126,150 L 114,134 Z"
+            : "M 64,134 C 60,144 48,154 50,174 C 52,188 64,195 90,195 C 116,195 128,188 130,174 C 132,154 120,144 116,134 Z";
+
+  const shadePath =
+    shape === "faceted"
+      ? "M 92,134 L 108,158 L 100,195 L 104,195 L 122,188 L 130,158 L 114,134 Z"
+      : shape === "chalice"
+        ? "M 96,134 C 102,152 98,170 92,178 L 104,188 L 118,194 L 102,194 L 104,188 L 102,178 C 116,170 122,150 118,134 Z"
+        : "M 96,134 C 102,146 112,156 110,175 C 108,186 100,193 90,195 C 116,195 128,188 130,174 C 132,154 120,144 116,134 Z";
   const stems = buildBouquetSpecs(resolvedItems, monthIndex);
   const swayDelay = `${(monthIndex % 5) * 0.55}s`;
 
@@ -453,23 +654,74 @@ export default function VaseIllustration({
       <circle cx="96" cy="134.5" r="1.6" fill="#7C5E4D" />
       <circle cx="104" cy="132.5" r="1.1" fill="#8C6C5A" />
 
-      {/* Ceramic Vase Body */}
+      {/* Ceramic / Glass Vase Body */}
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor={vase.body} />
+          <stop offset="100%" stopColor={vase.gradientTo} />
+        </linearGradient>
+        {vase.glowColor && (
+          <radialGradient id={glowId} cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor={vase.glowColor} stopOpacity="0.55" />
+            <stop offset="65%" stopColor={vase.glowColor} stopOpacity="0.18" />
+            <stop offset="100%" stopColor={vase.glowColor} stopOpacity="0" />
+          </radialGradient>
+        )}
+      </defs>
+
+      {vase.glowColor && (
+        <ellipse cx="90" cy="166" rx="58" ry="42" fill={`url(#${glowId})`} />
+      )}
+
       <path
-        d="M 64,134 C 60,144 48,154 50,174 C 52,188 64,195 90,195 C 116,195 128,188 130,174 C 132,154 120,144 116,134 Z"
-        fill={vase.body}
+        d={bodyPath}
+        fill={`url(#${gradId})`}
+        opacity={vase.isGlass ? 0.86 : 1}
+        style={
+          vase.glowColor
+            ? { filter: `drop-shadow(0 0 8px ${vase.glowColor})` }
+            : undefined
+        }
       />
       <path
-        d="M 96,134 C 102,146 112,156 110,175 C 108,186 100,193 90,195 C 116,195 128,188 130,174 C 132,154 120,144 116,134 Z"
+        d={shadePath}
         fill={vase.shade}
-        opacity="0.48"
+        opacity={vase.isGlass ? 0.28 : 0.45}
       />
+
+      {/* Amphora neck collar & Chalice handles */}
+      {shape === "amphora" && (
+        <path
+          d="M 67,140 Q 90,145 113,140"
+          fill="none"
+          stroke={vase.accent}
+          strokeWidth="2"
+          opacity="0.7"
+        />
+      )}
+      {shape === "chalice" && (
+        <g fill="none" stroke={vase.rim} strokeWidth="3" strokeLinecap="round">
+          <path d="M 62,140 C 46,142 46,160 63,162" />
+          <path d="M 118,140 C 134,142 134,160 117,162" />
+        </g>
+      )}
+      {shape === "faceted" && (
+        <g fill="none" stroke={vase.highlight} strokeWidth="1.3" opacity="0.55">
+          <path d="M 76,134 L 70,158 L 78,195" />
+          <path d="M 104,134 L 110,158 L 102,195" />
+          <path d="M 50,158 L 130,158" />
+        </g>
+      )}
+
+      {renderVasePattern(vase.pattern, vase.accent)}
+
       <path
         d="M 65,146 C 59,156 58,170 62,180"
         fill="none"
         stroke={vase.highlight}
-        strokeWidth="4.5"
+        strokeWidth={vase.isGlass ? "5.5" : "4.5"}
         strokeLinecap="round"
-        opacity="0.65"
+        opacity={vase.isGlass ? 0.82 : 0.65}
       />
       <path
         d="M 60,133 C 60,137.5 120,137.5 120,133 C 120,136.5 117,140 90,140 C 63,140 60,136.5 60,133 Z"
@@ -482,13 +734,6 @@ export default function VaseIllustration({
         strokeWidth="1.6"
         strokeLinecap="round"
         opacity="0.7"
-      />
-      <path
-        d="M 52,167 Q 90,173 128,167"
-        fill="none"
-        stroke={vase.highlight}
-        strokeWidth="1.4"
-        opacity="0.45"
       />
     </svg>
   );
