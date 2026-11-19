@@ -8,11 +8,14 @@ export interface VaseFlowerItem {
   unlock_date?: string | null;
 }
 
+export type PlantHealth = "fresh" | "thirsty" | "wilting" | "withered";
+
 interface VaseIllustrationProps {
   count?: number;
   flowers?: VaseFlowerItem[];
   monthIndex: number; // 0-11
   isWatered?: boolean;
+  plantHealth?: PlantHealth;
   className?: string;
 }
 
@@ -300,6 +303,7 @@ export default function VaseIllustration({
   flowers,
   monthIndex,
   isWatered = false,
+  plantHealth = "fresh",
   className = "",
 }: VaseIllustrationProps) {
   const resolvedItems: VaseFlowerItem[] =
@@ -313,6 +317,22 @@ export default function VaseIllustration({
   const stems = buildBouquetSpecs(resolvedItems, monthIndex);
   const swayDelay = `${(monthIndex % 5) * 0.55}s`;
 
+  const plantFilter =
+    plantHealth === "withered"
+      ? "grayscale(0.95) sepia(0.28) brightness(0.82)"
+      : plantHealth === "wilting"
+        ? "saturate(0.45) sepia(0.25) brightness(0.92)"
+        : plantHealth === "thirsty"
+          ? "saturate(0.75) brightness(0.97)"
+          : undefined;
+
+  const plantDroopTransform =
+    plantHealth === "withered"
+      ? "translate(0, 12) rotate(7 90 134) scale(1, 0.9)"
+      : plantHealth === "wilting"
+        ? "translate(0, 5) rotate(3.5 90 134) scale(1, 0.96)"
+        : undefined;
+
   return (
     <svg
       viewBox="0 0 180 210"
@@ -324,7 +344,15 @@ export default function VaseIllustration({
 
       {/* Animated stems, leaves & flowers */}
       {resolvedItems.length > 0 && (
-        <g className="animate-sway" style={{ animationDelay: swayDelay }}>
+        <g
+          className={plantHealth === "withered" ? "" : "animate-sway"}
+          style={{
+            animationDelay: swayDelay,
+            filter: plantFilter,
+            transition: "filter 0.5s ease",
+          }}
+          transform={plantDroopTransform}
+        >
           {resolvedItems.length >= 3 && (
             <g fill="#6B8E6E" opacity="0.88">
               <path d="M 88,132 Q 52,108 42,84 Q 68,94 86,124 Z" />

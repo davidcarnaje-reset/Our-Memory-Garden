@@ -25,10 +25,10 @@ import type {
   MemoryReply,
   WateringLog,
 } from "@/src/lib/db";
-import GardenPlace from "./GardenPlace";
+import GardenPlace, { type GardenTheme } from "./GardenPlace";
 import MemoryPhotoCarousel from "./MemoryPhotoCarousel";
 import PasscodeGate from "./PasscodeGate";
-import VaseIllustration from "./VaseIllustration";
+import VaseIllustration, { type PlantHealth } from "./VaseIllustration";
 import VaseModal, { MOOD_OPTIONS } from "./VaseModal";
 
 const MONTHS = [
@@ -91,6 +91,21 @@ function formatSpotlightDate(dateStr: string): string {
   });
 }
 
+function computePlantHealth(wateredAt: string | undefined): PlantHealth {
+  if (!wateredAt) return "fresh";
+  const normalized = wateredAt.includes("T")
+    ? wateredAt
+    : wateredAt.replace(" ", "T") + "Z";
+  const time = new Date(normalized).getTime();
+  if (Number.isNaN(time)) return "fresh";
+
+  const diffDays = (Date.now() - time) / (1000 * 60 * 60 * 24);
+  if (diffDays >= 3) return "withered";
+  if (diffDays >= 2) return "wilting";
+  if (diffDays >= 1) return "thirsty";
+  return "fresh";
+}
+
 interface MemoryGardenAppProps {
   partnerOptions: readonly string[];
   defaultYear?: number;
@@ -136,6 +151,27 @@ export default function MemoryGardenApp({
   // View Mode: Monthly Shelf vs Garden Place
   const [viewMode, setViewMode] = useState<"shelf" | "garden">("shelf");
   const [placements, setPlacements] = useState<GardenPlacement[]>([]);
+  const [gardenTheme, setGardenTheme] = useState<GardenTheme>(() => {
+    if (typeof window === "undefined") return "peaceful";
+    try {
+      const saved = localStorage.getItem("memory_garden_theme");
+      if (saved === "peaceful" || saved === "fantasy" || saved === "wonderful") {
+        return saved;
+      }
+    } catch {
+      // Ignore storage errors
+    }
+    return "peaceful";
+  });
+  const [plantHealth, setPlantHealth] = useState<PlantHealth>("fresh");
+
+  useEffect(() => {
+    const updateHealth = () =>
+      setPlantHealth(computePlantHealth(wateringLog?.watered_at));
+    updateHealth();
+    const interval = setInterval(updateHealth, 60_000);
+    return () => clearInterval(interval);
+  }, [wateringLog]);
 
   // Random Memory Spotlight
   const [spotlightMemory, setSpotlightMemory] = useState<Memory | null>(null);
@@ -335,6 +371,15 @@ export default function MemoryGardenApp({
           : mem
       )
     );
+  }
+
+  function handleChangeTheme(nextTheme: GardenTheme) {
+    setGardenTheme(nextTheme);
+    try {
+      localStorage.setItem("memory_garden_theme", nextTheme);
+    } catch {
+      // Ignore
+    }
   }
 
   async function handleSavePlacement(
@@ -634,32 +679,48 @@ export default function MemoryGardenApp({
             className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs sm:text-sm font-medium border shadow-xs transition cursor-pointer ${
               waterSparkleActive
                 ? "bg-[#659EC7] border-[#538AB2] text-white"
-                : isNight
-                  ? "bg-[#232B27] border-[#35403A] text-[#B8D9EE] hover:bg-[#2C3732]"
-                  : "bg-[#FFFCF7] border-[#D9E5EC] text-[#3F6885] hover:bg-[#EEF6FB]"
+                : plantHealth === "withered"
+                  ? "bg-[#B85042] border-[#9E4034] text-white animate-pulse"
+                  : plantHealth === "wilting"
+                    ? "bg-[#DF9A4E] border-[#C9853B] text-white"
+                    : isNight
+                      ? "bg-[#232B27] border-[#35403A] text-[#B8D9EE] hover:bg-[#2C3732]"
+                      : "bg-[#FFFCF7] border-[#D9E5EC] text-[#3F6885] hover:bg-[#EEF6FB]"
             }`}
           >
             <Droplets
               className={`w-4 h-4 ${waterSparkleActive ? "animate-bounce" : ""}`}
             />
             <span>
-              {waterSparkleActive ? "Garden Watered!" : "Water the Garden"}
+              {waterSparkleActive
+                ? "Garden Watered!"
+                : plantHealth === "withered"
+                  ? "Revive Garden!"
+                  : "Water the Garden"}
             </span>
           </button>
 
           {wateringLog && (
             <span
               className={`text-xs px-3 py-1.5 rounded-full ${
-                isNight
-                  ? "bg-[#232B27]/90 text-[#B5ACA0]"
-                  : "bg-[#EFE7DA]/80 text-[#6F5E53]"
+                plantHealth === "withered"
+                  ? "bg-[#FDF0EE] text-[#A94E43] font-medium"
+                  : plantHealth === "wilting"
+                    ? "bg-[#FDF4E7] text-[#9A601E] font-medium"
+                    : plantHealth === "thirsty"
+                      ? "bg-[#FBF6E8] text-[#8A6D29]"
+                      : isNight
+                        ? "bg-[#232B27]/90 text-[#B5ACA0]"
+                        : "bg-[#EFE7DA]/80 text-[#6F5E53]"
               }`}
             >
-              Last watered by{" "}
-              <strong className={isNight ? "text-[#E6DFD5]" : "text-[#3F322B]"}>
-                {wateringLog.watered_by}
-              </strong>{" "}
-              • {formatWateredTime(wateringLog.watered_at)}
+              {plantHealth === "withered"
+                ? "Withered (3+ days without water)"
+                : plantHealth === "wilting"
+                  ? "Wilting (2 days) • Needs water!"
+                  : plantHealth === "thirsty"
+                    ? "Getting thirsty • Water today"
+                    : `Last watered by ${wateringLog.watered_by} • ${formatWateredTime(wateringLog.watered_at)}`}
             </span>
           )}
         </div>
@@ -720,6 +781,9 @@ export default function MemoryGardenApp({
             placements={placements}
             isNight={isNight}
             isWatered={waterSparkleActive}
+            plantHealth={plantHealth}
+            theme={gardenTheme}
+            onChangeTheme={handleChangeTheme}
             onSavePlacement={handleSavePlacement}
             onRemovePlacement={handleRemovePlacement}
             onOpenMonth={(idx) => setSelectedMonthIndex(idx)}
@@ -751,6 +815,7 @@ export default function MemoryGardenApp({
                       flowers={monthMemories}
                       monthIndex={monthIndex}
                       isWatered={waterSparkleActive}
+                      plantHealth={plantHealth}
                     />
                   </div>
 
@@ -820,6 +885,7 @@ export default function MemoryGardenApp({
             ] ?? []
           }
           uploadedBy={uploadedBy}
+          plantHealth={plantHealth}
           onClose={() => setSelectedMonthIndex(null)}
           onMemoryCreated={handleMemoryCreated}
           onMemoryDeleted={handleMemoryDeleted}
@@ -868,6 +934,7 @@ export default function MemoryGardenApp({
               }
               alt={spotlightMemory.note.slice(0, 80)}
               maxHeightClass="max-h-80"
+              isGrayscale={plantHealth === "withered"}
             />
 
             <div className="p-5 space-y-3">

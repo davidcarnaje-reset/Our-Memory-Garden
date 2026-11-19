@@ -7,12 +7,14 @@ interface MemoryPhotoCarouselProps {
   fileIds: string[];
   alt: string;
   maxHeightClass?: string;
+  isGrayscale?: boolean;
 }
 
 export default function MemoryPhotoCarousel({
   fileIds,
   alt,
   maxHeightClass = "max-h-[380px]",
+  isGrayscale = false,
 }: MemoryPhotoCarouselProps) {
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -28,7 +30,9 @@ export default function MemoryPhotoCarousel({
       <img
         src={`/api/image/${currentId}`}
         alt={alt}
-        className={`w-full ${maxHeightClass} object-cover`}
+        className={`w-full ${maxHeightClass} object-cover transition-[filter] duration-500 ${
+          isGrayscale ? "grayscale contrast-95" : ""
+        }`}
       />
 
       {hasMultiple && (

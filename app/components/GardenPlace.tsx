@@ -10,7 +10,19 @@ import {
   Trash2,
 } from "lucide-react";
 import type { GardenPlacement, Memory } from "@/src/lib/db";
-import VaseIllustration from "./VaseIllustration";
+import VaseIllustration, { type PlantHealth } from "./VaseIllustration";
+
+export type GardenTheme = "peaceful" | "fantasy" | "wonderful";
+
+const THEME_OPTIONS: {
+  value: GardenTheme;
+  label: string;
+  emoji: string;
+}[] = [
+  { value: "peaceful", label: "Peaceful", emoji: "🌿" },
+  { value: "fantasy", label: "Fantasy", emoji: "✨" },
+  { value: "wonderful", label: "Wonderful", emoji: "🌈" },
+];
 
 const MONTHS = [
   "January",
@@ -33,6 +45,9 @@ interface GardenPlaceProps {
   placements: GardenPlacement[];
   isNight: boolean;
   isWatered: boolean;
+  plantHealth: PlantHealth;
+  theme: GardenTheme;
+  onChangeTheme: (theme: GardenTheme) => void;
   onSavePlacement: (
     monthKey: string,
     xPercent: number,
@@ -49,6 +64,9 @@ export default function GardenPlace({
   placements,
   isNight,
   isWatered,
+  plantHealth,
+  theme,
+  onChangeTheme,
   onSavePlacement,
   onRemovePlacement,
   onOpenMonth,
@@ -159,11 +177,24 @@ export default function GardenPlace({
     }
   }
 
+  const canvasBgClass =
+    theme === "fantasy"
+      ? isNight
+        ? "border-[#3D3552] bg-gradient-to-b from-[#1A1630] via-[#282246] to-[#24323A]"
+        : "border-[#D6CBE8] bg-gradient-to-b from-[#E3D8F5] via-[#DCE7F2] to-[#B7D5C4]"
+      : theme === "wonderful"
+        ? isNight
+          ? "border-[#4A3A47] bg-gradient-to-b from-[#23192D] via-[#3A273D] to-[#2A3B34]"
+          : "border-[#E9D3B8] bg-gradient-to-b from-[#FCE6C9] via-[#F7ECDA] to-[#B9D4A7]"
+        : isNight
+          ? "border-[#35403A] bg-gradient-to-b from-[#172026] via-[#21302B] to-[#273B2D]"
+          : "border-[#DFD2C1] bg-gradient-to-b from-[#DCEEF4] via-[#E9F2E4] to-[#BBD1AE]";
+
   return (
     <div className="space-y-6">
-      {/* Top hint bar */}
+      {/* Top hint & theme selector bar */}
       <div
-        className={`rounded-2xl px-4 py-3 border flex flex-wrap items-center justify-between gap-2 text-xs ${
+        className={`rounded-2xl px-4 py-3 border flex flex-wrap items-center justify-between gap-3 text-xs ${
           isNight
             ? "bg-[#232B27]/90 border-[#35403A] text-[#C8C0B4]"
             : "bg-[#FFFCF7] border-[#E7DDD0] text-[#6E5C51]"
@@ -172,24 +203,41 @@ export default function GardenPlace({
         <div className="flex items-center gap-2">
           <Move className="w-4 h-4 text-[#C87A65] shrink-0" />
           <span>
-            Drag any vase to arrange your garden. Tap a vase to resize, inspect
-            memories, or put it away.
+            Drag any vase to arrange your garden ({visiblePlacements.length}{" "}
+            placed in {year}).
           </span>
         </div>
-        <span className="font-semibold text-[#5B7A5F]">
-          {visiblePlacements.length} placed in {year}
-        </span>
+
+        {/* 3 Garden Background Choices */}
+        <div className="flex items-center gap-1.5">
+          {THEME_OPTIONS.map((opt) => {
+            const active = theme === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onChangeTheme(opt.value)}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                  active
+                    ? "bg-[#6D8C70] border-[#5B7A5F] text-white shadow-xs"
+                    : isNight
+                      ? "bg-[#2B342F] border-[#3C4841] text-[#C8C0B4] hover:border-[#6D8C70]"
+                      : "bg-[#FAF6F0] border-[#E4D9CB] text-[#5C4C42] hover:border-[#C87A65]"
+                }`}
+              >
+                <span>{opt.emoji}</span>
+                <span>{opt.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Interactive Garden Canvas */}
       <div
         ref={containerRef}
         onClick={() => setSelectedMonthKey(null)}
-        className={`relative w-full h-[420px] sm:h-[500px] rounded-[2rem] border overflow-hidden select-none shadow-lg transition-colors duration-700 ${
-          isNight
-            ? "border-[#35403A] bg-gradient-to-b from-[#172026] via-[#21302B] to-[#273B2D]"
-            : "border-[#DFD2C1] bg-gradient-to-b from-[#DCEEF4] via-[#E9F2E4] to-[#BBD1AE]"
-        }`}
+        className={`relative w-full h-[420px] sm:h-[500px] rounded-[2rem] border overflow-hidden select-none shadow-lg transition-colors duration-700 ${canvasBgClass}`}
       >
         {/* Illustrated Garden Backdrop SVG */}
         <svg
@@ -202,7 +250,18 @@ export default function GardenPlace({
           {isNight ? (
             <>
               <circle cx="1020" cy="92" r="32" fill="#F8E7A1" opacity="0.92" />
-              <circle cx="1034" cy="84" r="28" fill="#172026" />
+              <circle
+                cx="1034"
+                cy="84"
+                r="28"
+                fill={
+                  theme === "fantasy"
+                    ? "#1A1630"
+                    : theme === "wonderful"
+                      ? "#23192D"
+                      : "#172026"
+                }
+              />
               {[
                 [140, 65],
                 [260, 42],
@@ -218,60 +277,186 @@ export default function GardenPlace({
                   cy={sy}
                   r={i % 2 === 0 ? 2.2 : 1.5}
                   fill="#FFF7D6"
-                  opacity="0.75"
+                  opacity="0.8"
                 />
               ))}
             </>
           ) : (
             <>
-              <circle cx="1030" cy="95" r="46" fill="#FCE59B" opacity="0.8" />
-              <circle cx="1030" cy="95" r="76" fill="#FCE59B" opacity="0.25" />
+              <circle cx="1030" cy="95" r="46" fill="#FCE59B" opacity="0.85" />
+              <circle cx="1030" cy="95" r="78" fill="#FCE59B" opacity="0.28" />
             </>
+          )}
+
+          {/* Theme-specific sky accents */}
+          {theme === "wonderful" && (
+            <g opacity={isNight ? 0.25 : 0.45}>
+              <path
+                d="M 120,250 Q 480,30 880,240"
+                fill="none"
+                stroke="#F29F9D"
+                strokeWidth="12"
+              />
+              <path
+                d="M 132,254 Q 480,44 868,244"
+                fill="none"
+                stroke="#F7D58B"
+                strokeWidth="10"
+              />
+              <path
+                d="M 144,258 Q 480,58 856,248"
+                fill="none"
+                stroke="#9EC8D9"
+                strokeWidth="10"
+              />
+            </g>
+          )}
+
+          {theme === "fantasy" && (
+            <g>
+              {/* Floating magic orbs */}
+              {[
+                [210, 130, 7, "#E8B7F5"],
+                [460, 110, 5, "#9BE7E3"],
+                [770, 145, 8, "#F8D78D"],
+                [900, 115, 5, "#D1B5F7"],
+              ].map(([cx, cy, r, fill], idx) => (
+                <g key={idx}>
+                  <circle
+                    cx={cx as number}
+                    cy={cy as number}
+                    r={(r as number) * 2.5}
+                    fill={fill as string}
+                    opacity="0.2"
+                  />
+                  <circle
+                    cx={cx as number}
+                    cy={cy as number}
+                    r={r as number}
+                    fill={fill as string}
+                    opacity="0.85"
+                  />
+                </g>
+              ))}
+            </g>
           )}
 
           {/* Distant Rolling Hills */}
           <path
             d="M0,250 Q280,170 600,235 T1200,220 L1200,600 L0,600 Z"
-            fill={isNight ? "#223328" : "#A9C59B"}
+            fill={
+              theme === "fantasy"
+                ? isNight
+                  ? "#2B2848"
+                  : "#9DBAA9"
+                : theme === "wonderful"
+                  ? isNight
+                    ? "#342E3E"
+                    : "#B6C99B"
+                  : isNight
+                    ? "#223328"
+                    : "#A9C59B"
+            }
           />
           <path
             d="M0,290 Q360,235 720,285 T1200,270 L1200,600 L0,600 Z"
-            fill={isNight ? "#2A3F30" : "#96B787"}
+            fill={
+              theme === "fantasy"
+                ? isNight
+                  ? "#273A3B"
+                  : "#8DB5A2"
+                : theme === "wonderful"
+                  ? isNight
+                    ? "#2C3B32"
+                    : "#9EC08C"
+                  : isNight
+                    ? "#2A3F30"
+                    : "#96B787"
+            }
           />
 
           {/* Cozy Stone Pathway */}
           <path
             d="M520,600 Q545,450 580,350 Q605,295 625,270 L665,270 Q655,315 650,360 Q645,465 695,600 Z"
-            fill={isNight ? "#4A524D" : "#E3D6C3"}
+            fill={
+              theme === "fantasy"
+                ? isNight
+                  ? "#4F496B"
+                  : "#DFD7EB"
+                : isNight
+                  ? "#4A524D"
+                  : "#E3D6C3"
+            }
             opacity="0.72"
           />
 
-          {/* Wooden Garden Bench on the left */}
-          <g transform="translate(150, 245)" opacity={isNight ? 0.85 : 0.95}>
-            <rect x="0" y="18" width="130" height="10" rx="4" fill="#8C6247" />
-            <rect x="0" y="34" width="130" height="10" rx="4" fill="#7C543B" />
-            <rect x="-4" y="52" width="138" height="12" rx="4" fill="#9A6E52" />
-            <rect x="12" y="14" width="10" height="62" rx="3" fill="#5D3E2B" />
-            <rect x="108" y="14" width="10" height="62" rx="3" fill="#5D3E2B" />
-          </g>
-
-          {/* Garden Lantern / Arch Accent on the right */}
-          <g transform="translate(960, 225)">
-            <rect x="16" y="35" width="8" height="68" rx="3" fill="#5C4A3E" />
-            <path d="M4,35 L36,35 L28,15 L12,15 Z" fill="#46372E" />
-            <rect
-              x="12"
-              y="35"
-              width="16"
-              height="18"
-              rx="3"
-              fill={isNight ? "#F9DF7B" : "#FFF3C4"}
-              opacity={isNight ? 0.95 : 0.7}
-            />
-            {isNight && (
-              <circle cx="20" cy="44" r="28" fill="#F9DF7B" opacity="0.22" />
-            )}
-          </g>
+          {/* Theme-specific scenery */}
+          {theme === "fantasy" ? (
+            <>
+              {/* Glowing Crystal Mushrooms */}
+              <g transform="translate(170, 265)">
+                <rect x="14" y="20" width="10" height="24" rx="4" fill="#EAE0F2" />
+                <path d="M0,22 Q19,-4 38,22 Z" fill="#B68AE0" />
+                <circle cx="14" cy="14" r="3" fill="#FFF3FF" opacity="0.8" />
+                <circle cx="25" cy="17" r="2" fill="#FFF3FF" opacity="0.8" />
+              </g>
+              <g transform="translate(940, 250)">
+                <path
+                  d="M0,55 Q45,-10 90,55"
+                  fill="none"
+                  stroke="#9C8BB8"
+                  strokeWidth="9"
+                  strokeLinecap="round"
+                />
+                <circle cx="45" cy="24" r="6" fill="#F8E192" opacity="0.9" />
+              </g>
+            </>
+          ) : theme === "wonderful" ? (
+            <>
+              {/* Shimmering Pond & Romantic Gazebo */}
+              <ellipse
+                cx="220"
+                cy="335"
+                rx="115"
+                ry="28"
+                fill={isNight ? "#4A6C82" : "#9FD3E6"}
+                opacity="0.7"
+              />
+              <g transform="translate(910, 200)" opacity="0.9">
+                <path d="M0,40 L55,5 L110,40 Z" fill="#C87A65" />
+                <rect x="12" y="40" width="8" height="58" fill="#EFE4D6" />
+                <rect x="90" y="40" width="8" height="58" fill="#EFE4D6" />
+                <rect x="6" y="95" width="98" height="8" rx="3" fill="#D4C2AD" />
+              </g>
+            </>
+          ) : (
+            <>
+              {/* Peaceful Wooden Garden Bench & Lantern */}
+              <g transform="translate(150, 245)" opacity={isNight ? 0.85 : 0.95}>
+                <rect x="0" y="18" width="130" height="10" rx="4" fill="#8C6247" />
+                <rect x="0" y="34" width="130" height="10" rx="4" fill="#7C543B" />
+                <rect x="-4" y="52" width="138" height="12" rx="4" fill="#9A6E52" />
+                <rect x="12" y="14" width="10" height="62" rx="3" fill="#5D3E2B" />
+                <rect x="108" y="14" width="10" height="62" rx="3" fill="#5D3E2B" />
+              </g>
+              <g transform="translate(960, 225)">
+                <rect x="16" y="35" width="8" height="68" rx="3" fill="#5C4A3E" />
+                <path d="M4,35 L36,35 L28,15 L12,15 Z" fill="#46372E" />
+                <rect
+                  x="12"
+                  y="35"
+                  width="16"
+                  height="18"
+                  rx="3"
+                  fill={isNight ? "#F9DF7B" : "#FFF3C4"}
+                  opacity={isNight ? 0.95 : 0.7}
+                />
+                {isNight && (
+                  <circle cx="20" cy="44" r="28" fill="#F9DF7B" opacity="0.22" />
+                )}
+              </g>
+            </>
+          )}
 
           {/* Soft foreground grass tufts */}
           <g fill={isNight ? "#334C3A" : "#7FA270"} opacity="0.65">
@@ -389,6 +574,7 @@ export default function GardenPlace({
                 flowers={monthMemories}
                 monthIndex={monthIdx}
                 isWatered={isWatered}
+                plantHealth={plantHealth}
               />
 
               {/* Subtle month label tag */}

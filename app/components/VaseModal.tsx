@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import type { Memory, MemoryMood, MemoryReply } from "@/src/lib/db";
 import MemoryPhotoCarousel from "./MemoryPhotoCarousel";
+import type { PlantHealth } from "./VaseIllustration";
 
 export const MOOD_OPTIONS: {
   value: MemoryMood;
@@ -62,6 +63,7 @@ interface VaseModalProps {
   monthName: string;
   memories: Memory[];
   uploadedBy: string;
+  plantHealth?: PlantHealth;
   onClose: () => void;
   onMemoryCreated: (memory: Memory) => void;
   onMemoryDeleted: (memoryId: number) => void;
@@ -157,6 +159,7 @@ export default function VaseModal({
   monthName,
   memories,
   uploadedBy,
+  plantHealth = "fresh",
   onClose,
   onMemoryCreated,
   onMemoryDeleted,
@@ -471,6 +474,13 @@ export default function VaseModal({
               </div>
             ) : (
               <div className="space-y-6">
+                {plantHealth === "withered" && (
+                  <div className="rounded-2xl bg-[#EFECE7] border border-[#D8D1C7] px-4 py-3 text-xs text-[#5E574E] text-center">
+                    Your plants withered after 3+ days without water, so photos
+                    are in grayscale. Water the garden to bring back their
+                    colors!
+                  </div>
+                )}
                 {memories.map((memory) => {
                   const isLocked = Boolean(
                     memory.unlock_date && memory.unlock_date > todayIso
@@ -513,6 +523,7 @@ export default function VaseModal({
                                 : []
                           }
                           alt={memory.note.slice(0, 80)}
+                          isGrayscale={plantHealth === "withered"}
                         />
                       )}
 
