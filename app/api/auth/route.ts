@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!verifyPasscode(passcode)) {
+    if (!verifyPasscode(passcode, uploadedBy)) {
       return NextResponse.json(
         { error: "That passcode doesn't match our garden key." },
         { status: 401 }

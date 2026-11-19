@@ -3,16 +3,30 @@ import { cookies } from "next/headers";
 
 export const SESSION_COOKIE_NAME = "memory_garden_session";
 
-function getAppPasscode(): string {
-  const passcode = process.env.APP_PASSCODE;
-  if (!passcode) {
+function getSigningSecret(): string {
+  const secret =
+    process.env.APP_PASSCODE ||
+    process.env.PASSCODE_DAVID ||
+    process.env.PASSCODE_JULLIANA;
+  if (!secret) {
     throw new Error("APP_PASSCODE environment variable is not configured.");
   }
-  return passcode;
+  return secret;
 }
 
-export function verifyPasscode(input: string): boolean {
-  const expected = getAppPasscode();
+function getExpectedPasscode(uploadedBy?: string): string {
+  if (uploadedBy) {
+    const envKey = `PASSCODE_${uploadedBy.trim().toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
+    const partnerPasscode = process.env[envKey];
+    if (partnerPasscode) {
+      return partnerPasscode;
+    }
+  }
+  return getSigningSecret();
+}
+
+export function verifyPasscode(input: string, uploadedBy?: string): boolean {
+  const expected = getExpectedPasscode(uploadedBy);
   const a = crypto.createHash("sha256").update(input).digest();
   const b = crypto.createHash("sha256").update(expected).digest();
   return crypto.timingSafeEqual(a, b);
@@ -23,7 +37,7 @@ function signPayload(payload: string, secret: string): string {
 }
 
 export function createSessionToken(uploadedBy: string): string {
-  const secret = getAppPasscode();
+  const secret = getSigningSecret();
   const payload = Buffer.from(
     JSON.stringify({ uploadedBy, iat: Date.now() }),
     "utf8"
@@ -40,7 +54,7 @@ export function parseSessionToken(token: string | undefined): { uploadedBy: stri
   const [payload, signature] = parts;
   let secret: string;
   try {
-    secret = getAppPasscode();
+    secret = getSigningSecret();
   } catch {
     return null;
   }
