@@ -14,7 +14,7 @@ export default function PasscodeGate({
   onSuccess,
 }: PasscodeGateProps) {
   const [selectedPartner, setSelectedPartner] = useState<string>(
-    partnerOptions[0] ?? "Me"
+    partnerOptions[0] ?? "David"
   );
   const [passcode, setPasscode] = useState("");
   const [showPasscode, setShowPasscode] = useState(false);
@@ -24,7 +24,7 @@ export default function PasscodeGate({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!passcode.trim()) {
-      setError("Please enter our shared passcode.");
+      setError("Please enter your garden passcode.");
       return;
     }
 
@@ -62,22 +62,32 @@ export default function PasscodeGate({
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md bg-[#FFFCF7] border border-[#E7DDD0] rounded-3xl shadow-[0_20px_60px_-20px_rgba(74,59,50,0.16)] p-7 sm:p-9 animate-bloom-in">
+    <div className="min-h-screen relative flex items-center justify-center px-4 py-8 sm:py-12 overflow-hidden">
+      {/* Ambient botanical glow */}
+      <div
+        className="pointer-events-none fixed inset-0 overflow-hidden"
+        aria-hidden="true"
+      >
+        <div className="absolute -top-24 -left-20 w-80 h-80 rounded-full bg-[#D98A8C]/15 blur-3xl" />
+        <div className="absolute -bottom-24 -right-20 w-96 h-96 rounded-full bg-[#6D8C70]/15 blur-3xl" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[520px] h-[520px] rounded-full bg-[#E8C468]/10 blur-3xl" />
+      </div>
+
+      <div className="relative w-full max-w-[430px] bg-[#FFFCF7]/90 backdrop-blur-xl border border-[#E7DDD0]/90 rounded-[2rem] shadow-[0_24px_70px_-20px_rgba(63,50,43,0.18)] p-6 sm:p-9 animate-bloom-in">
         {/* Decorative mini bouquet */}
-        <div className="w-28 mx-auto -mt-2 mb-2">
+        <div className="w-24 sm:w-28 mx-auto -mt-2 mb-2">
           <VaseIllustration count={3} monthIndex={3} />
         </div>
 
-        <div className="text-center mb-7">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F2E9DC] text-[#7D6352] text-xs font-medium mb-3">
-            <Sparkles className="w-3.5 h-3.5 text-[#C87A65]" />
+        <div className="text-center mb-6 sm:mb-7">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F3EAE0] border border-[#E6D9CA] text-[#7D6352] text-[11px] font-semibold tracking-wide uppercase mb-3">
+            <Sparkles className="w-3 h-3 text-[#C87A65]" />
             <span>Private Keepsake</span>
           </div>
-          <h1 className="font-[family-name:var(--font-serif)] text-3xl font-semibold text-[#3F322B] tracking-tight">
+          <h1 className="font-[family-name:var(--font-serif)] text-2xl sm:text-3xl font-semibold text-[#3F322B] tracking-tight">
             Our Memory Garden
           </h1>
-          <p className="text-sm text-[#7A685D] mt-2 leading-relaxed">
+          <p className="text-xs sm:text-sm text-[#7A685D] mt-2 leading-relaxed max-w-xs mx-auto">
             Every photo and love note we plant blooms into a flower in our
             monthly vases.
           </p>
@@ -86,29 +96,44 @@ export default function PasscodeGate({
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Who is logging in */}
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-[#7A685D] mb-2">
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#7A685D] mb-2.5">
               Who is visiting today?
             </label>
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-2 gap-3">
               {partnerOptions.map((name) => {
                 const isSelected = selectedPartner === name;
+                const initial = name.charAt(0).toUpperCase();
                 return (
                   <button
                     key={name}
                     type="button"
-                    onClick={() => setSelectedPartner(name)}
-                    className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-2xl border text-sm font-medium transition-all cursor-pointer ${
+                    onClick={() => {
+                      setSelectedPartner(name);
+                      if (error) setError(null);
+                    }}
+                    className={`group flex items-center gap-2.5 py-2.5 px-3.5 rounded-2xl border text-sm font-semibold transition-all duration-200 cursor-pointer ${
                       isSelected
-                        ? "bg-[#6D8C70] text-white border-[#5B7A5F] shadow-sm"
-                        : "bg-[#FAF6F0] text-[#5C4C42] border-[#E4D9CB] hover:border-[#C8B9A6]"
+                        ? "bg-[#6D8C70] text-white border-[#5B7A5F] shadow-[0_8px_20px_-8px_rgba(91,122,95,0.6)] scale-[1.01]"
+                        : "bg-[#FAF6F0] text-[#5C4C42] border-[#E4D9CB] hover:border-[#C8B9A6] hover:bg-[#F5EFE6]"
                     }`}
                   >
+                    <span
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 transition-colors ${
+                        isSelected
+                          ? "bg-white/20 text-white"
+                          : "bg-[#EFE5D7] text-[#7D6352]"
+                      }`}
+                    >
+                      {initial}
+                    </span>
+                    <span className="truncate">{name}</span>
                     <Heart
-                      className={`w-4 h-4 ${
-                        isSelected ? "fill-white/90 text-white" : "text-[#D98A8C]"
+                      className={`w-3.5 h-3.5 ml-auto shrink-0 transition-transform ${
+                        isSelected
+                          ? "fill-white/90 text-white scale-110"
+                          : "text-[#D98A8C] group-hover:scale-110"
                       }`}
                     />
-                    <span>{name}</span>
                   </button>
                 );
               })}
@@ -119,12 +144,12 @@ export default function PasscodeGate({
           <div>
             <label
               htmlFor="garden-passcode"
-              className="block text-xs font-semibold uppercase tracking-wider text-[#7A685D] mb-2"
+              className="block text-[11px] font-semibold uppercase tracking-wider text-[#7A685D] mb-2"
             >
-              Garden Passcode
+              {selectedPartner}&apos;s Passcode
             </label>
             <div className="relative">
-              <KeyRound className="w-4 h-4 text-[#9C897C] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <KeyRound className="w-4 h-4 text-[#9C897C] absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 id="garden-passcode"
                 type={showPasscode ? "text" : "password"}
@@ -133,15 +158,15 @@ export default function PasscodeGate({
                   setPasscode(e.target.value);
                   if (error) setError(null);
                 }}
-                placeholder="Enter our secret passcode..."
+                placeholder={`Enter ${selectedPartner}'s passcode...`}
                 autoComplete="current-password"
-                className="w-full pl-10 pr-11 py-3 rounded-2xl bg-[#FAF6F0] border border-[#E4D9CB] text-[#3F322B] placeholder:text-[#A9988C] text-sm focus:outline-none focus:ring-2 focus:ring-[#6D8C70]/40 focus:border-[#6D8C70] transition"
+                className="w-full pl-11 pr-11 py-3.5 rounded-2xl bg-[#FAF6F0] border border-[#E4D9CB] text-[#3F322B] placeholder:text-[#A9988C] text-sm focus:outline-none focus:ring-2 focus:ring-[#6D8C70]/35 focus:border-[#6D8C70] transition"
               />
               <button
                 type="button"
                 onClick={() => setShowPasscode((prev) => !prev)}
                 aria-label={showPasscode ? "Hide passcode" : "Show passcode"}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#8D7B6F] hover:text-[#3F322B] cursor-pointer"
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-xl text-[#8D7B6F] hover:text-[#3F322B] hover:bg-[#EFE6D8] transition cursor-pointer"
               >
                 {showPasscode ? (
                   <EyeOff className="w-4 h-4" />
@@ -161,7 +186,7 @@ export default function PasscodeGate({
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full py-3 px-5 rounded-2xl bg-[#C87A65] hover:bg-[#B86B56] disabled:opacity-65 text-white font-semibold text-sm shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-3.5 px-5 rounded-2xl bg-[#C87A65] hover:bg-[#B86B56] active:scale-[0.99] disabled:opacity-65 text-white font-semibold text-sm shadow-[0_10px_24px_-10px_rgba(200,122,101,0.75)] transition-all flex items-center justify-center gap-2 cursor-pointer"
           >
             {isSubmitting ? (
               <>

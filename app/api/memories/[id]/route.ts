@@ -43,6 +43,8 @@ export async function DELETE(
       return NextResponse.json({ error: "Memory not found." }, { status: 404 });
     }
 
+    await pool.execute(`DELETE FROM memory_replies WHERE memory_id = ?`, [memoryId]);
+
     // Best-effort cleanup in Google Drive
     await deleteImageFromDrive(driveFileId);
 

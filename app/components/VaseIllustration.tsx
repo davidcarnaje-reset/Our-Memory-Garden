@@ -1,10 +1,18 @@
 "use client";
 
 import React from "react";
+import type { MemoryMood } from "@/src/lib/db";
+
+export interface VaseFlowerItem {
+  mood?: MemoryMood;
+  unlock_date?: string | null;
+}
 
 interface VaseIllustrationProps {
-  count: number;
+  count?: number;
+  flowers?: VaseFlowerItem[];
   monthIndex: number; // 0-11
+  isWatered?: boolean;
   className?: string;
 }
 
@@ -17,34 +25,106 @@ const VASE_PALETTES = [
   { body: "#DFC38E", shade: "#C8A970", rim: "#ECD4A6", highlight: "#F8E9CA" }, // Ochre Clay
 ];
 
-const FLOWER_PALETTE = [
-  { petal: "#E28B90", inner: "#C96B71", center: "#F6D578" }, // Dusty Rose
-  { petal: "#ECC568", inner: "#D6A844", center: "#7C5238" }, // Buttercup
-  { petal: "#DC846B", inner: "#C1664D", center: "#F8E192" }, // Terracotta Coral
+const COZY_DAISY_COLORS = [
+  { petal: "#F3D2CF", inner: "#DCA8A4", center: "#E5B655" }, // Blush Cream
   { petal: "#B8A3CC", inner: "#9B82B5", center: "#F5D77F" }, // Lavender
   { petal: "#F0AE8D", inner: "#D88E6B", center: "#8A5D3B" }, // Warm Peach
-  { petal: "#F3D2CF", inner: "#DCA8A4", center: "#E5B655" }, // Blush Cream
   { petal: "#9BB5D6", inner: "#7B98BE", center: "#F6D578" }, // Periwinkle
 ];
 
-type FlowerKind = "daisy" | "tulip" | "rose" | "cosmos";
+type FlowerKind = "rose" | "sunflower" | "tulip" | "daisy" | "bud";
+
+function getColorsForMood(mood: MemoryMood | undefined, index: number) {
+  switch (mood) {
+    case "date_night":
+      return { petal: "#E28B90", inner: "#C96B71", center: "#F6D578" }; // Rose
+    case "travel":
+      return { petal: "#F2BE42", inner: "#D99A26", center: "#5E3D24" }; // Sunflower
+    case "milestone":
+      return { petal: "#DC846B", inner: "#C1664D", center: "#F8E192" }; // Tulip
+    case "cozy":
+    default:
+      return COZY_DAISY_COLORS[index % COZY_DAISY_COLORS.length];
+  }
+}
+
+function getKindForFlower(item: VaseFlowerItem, today: string): FlowerKind {
+  if (item.unlock_date && item.unlock_date > today) {
+    return "bud";
+  }
+  switch (item.mood) {
+    case "date_night":
+      return "rose";
+    case "travel":
+      return "sunflower";
+    case "milestone":
+      return "tulip";
+    case "cozy":
+    default:
+      return "daisy";
+  }
+}
 
 function renderFlowerHead(
   x: number,
   y: number,
   scale: number,
   rotation: number,
-  paletteIndex: number,
+  colors: { petal: string; inner: string; center: string },
   kind: FlowerKind,
   key: string
 ) {
-  const colors = FLOWER_PALETTE[paletteIndex % FLOWER_PALETTE.length];
-
   return (
     <g
       key={key}
       transform={`translate(${x}, ${y}) rotate(${rotation}) scale(${scale})`}
     >
+      {kind === "bud" && (
+        <>
+          {/* Closed Time Capsule Flower Bud */}
+          <path
+            d="M -6,2 C -7,-8 -2,-15 0,-17 C 2,-15 7,-8 6,2 C 4,6 -4,6 -6,2 Z"
+            fill={colors.petal}
+          />
+          <path
+            d="M -3,1 C -3,-7 -1,-13 0,-16 C 1,-13 3,-7 3,1 Z"
+            fill={colors.inner}
+            opacity="0.65"
+          />
+          {/* Green wrapping sepals */}
+          <path
+            d="M -7,3 C -8,-3 -4,-8 -1,-4 C 0,0 -2,6 -7,3 Z"
+            fill="#5C7D60"
+          />
+          <path
+            d="M 7,3 C 8,-3 4,-8 1,-4 C 0,0 2,6 7,3 Z"
+            fill="#6D8F71"
+          />
+          <circle cx="0" cy="-14" r="1.4" fill="#FFF8E7" opacity="0.85" />
+        </>
+      )}
+
+      {kind === "sunflower" && (
+        <>
+          {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map(
+            (angle) => (
+              <ellipse
+                key={angle}
+                cx="0"
+                cy="-11"
+                rx="3.1"
+                ry="8.2"
+                fill={angle % 60 === 0 ? colors.petal : colors.inner}
+                transform={`rotate(${angle})`}
+              />
+            )
+          )}
+          <circle cx="0" cy="0" r="6.5" fill={colors.center} />
+          <circle cx="-1.5" cy="-1.5" r="1.2" fill="#8C5E3C" />
+          <circle cx="2" cy="1" r="1" fill="#8C5E3C" />
+        </>
+      )}
+
       {kind === "daisy" && (
         <>
           {[0, 45, 90, 135, 180, 225, 270, 315].map((angle) => (
@@ -107,20 +187,6 @@ function renderFlowerHead(
           <circle cx="0" cy="0" r="3.6" fill={colors.center} />
         </>
       )}
-
-      {kind === "cosmos" && (
-        <>
-          {[0, 72, 144, 216, 288].map((angle) => (
-            <path
-              key={angle}
-              d="M 0,0 C -5,-6 -7,-14 -2,-16 C 0,-14 0,-14 2,-16 C 7,-14 5,-6 0,0 Z"
-              fill={colors.petal}
-              transform={`rotate(${angle})`}
-            />
-          ))}
-          <circle cx="0" cy="0" r="4.3" fill={colors.center} />
-        </>
-      )}
     </g>
   );
 }
@@ -133,16 +199,21 @@ interface StemSpec {
   rotation: number;
   scale: number;
   kind: FlowerKind;
-  colorIdx: number;
+  colors: { petal: string; inner: string; center: string };
   leafSide: "left" | "right" | "both";
 }
 
-function buildBouquetSpecs(count: number, monthIndex: number): StemSpec[] {
+function buildBouquetSpecs(
+  items: VaseFlowerItem[],
+  monthIndex: number
+): StemSpec[] {
+  const count = items.length;
   if (count <= 0) return [];
 
-  const kinds: FlowerKind[] = ["rose", "daisy", "tulip", "cosmos"];
+  const today = new Date().toISOString().slice(0, 10);
 
   if (count === 1) {
+    const item = items[0];
     return [
       {
         endX: 90,
@@ -151,8 +222,8 @@ function buildBouquetSpecs(count: number, monthIndex: number): StemSpec[] {
         ctrlY: 96,
         rotation: -4,
         scale: 1.08,
-        kind: kinds[monthIndex % kinds.length],
-        colorIdx: monthIndex % FLOWER_PALETTE.length,
+        kind: getKindForFlower(item, today),
+        colors: getColorsForMood(item.mood, monthIndex),
         leafSide: "both",
       },
     ];
@@ -167,8 +238,8 @@ function buildBouquetSpecs(count: number, monthIndex: number): StemSpec[] {
         ctrlY: 96,
         rotation: -14,
         scale: 0.98,
-        kind: kinds[monthIndex % kinds.length],
-        colorIdx: monthIndex % FLOWER_PALETTE.length,
+        kind: getKindForFlower(items[0], today),
+        colors: getColorsForMood(items[0].mood, monthIndex),
         leafSide: "left",
       },
       {
@@ -178,25 +249,23 @@ function buildBouquetSpecs(count: number, monthIndex: number): StemSpec[] {
         ctrlY: 94,
         rotation: 12,
         scale: 1.04,
-        kind: kinds[(monthIndex + 1) % kinds.length],
-        colorIdx: (monthIndex + 1) % FLOWER_PALETTE.length,
+        kind: getKindForFlower(items[1], today),
+        colors: getColorsForMood(items[1].mood, monthIndex + 1),
         leafSide: "right",
       },
     ];
   }
 
-  // 3+ memories: lush multi-stem bouquet rendering 1 distinct flower per memory
   const specs: StemSpec[] = [];
-  const goldenAngle = 2.39996; // phyllotaxis-inspired spread
+  const goldenAngle = 2.39996;
 
   for (let i = 0; i < count; i++) {
-    const t = count === 1 ? 0.5 : i / (count - 1); // 0..1
-    const layer = i % 3; // 0 = tall back, 1 = mid, 2 = front lower
+    const item = items[i];
+    const t = i / (count - 1);
+    const layer = i % 3;
 
-    // Spread stems across a natural fan
     const spread = Math.min(48, 24 + count * 3.2);
     const fanOffset = (t - 0.5) * 2 * spread;
-    // Slight deterministic jitter so bouquet feels organic
     const jitterX = Math.sin(i * 2.7 + monthIndex) * 5;
     const endX = Math.max(28, Math.min(152, 90 + fanOffset + jitterX));
 
@@ -217,23 +286,31 @@ function buildBouquetSpecs(count: number, monthIndex: number): StemSpec[] {
       ctrlY,
       rotation,
       scale,
-      kind: kinds[(i + monthIndex) % kinds.length],
-      colorIdx: (i + monthIndex) % FLOWER_PALETTE.length,
+      kind: getKindForFlower(item, today),
+      colors: getColorsForMood(item.mood, i + monthIndex),
       leafSide: i % 2 === 0 ? "left" : "right",
     });
   }
 
-  // Draw taller back stems first, front stems last
   return specs.sort((a, b) => a.endY - b.endY);
 }
 
 export default function VaseIllustration({
   count,
+  flowers,
   monthIndex,
+  isWatered = false,
   className = "",
 }: VaseIllustrationProps) {
+  const resolvedItems: VaseFlowerItem[] =
+    flowers ??
+    Array.from({ length: count ?? 0 }, (_, idx) => ({
+      mood: (["date_night", "travel", "milestone", "cozy"] as const)[idx % 4],
+      unlock_date: null,
+    }));
+
   const vase = VASE_PALETTES[monthIndex % VASE_PALETTES.length];
-  const stems = buildBouquetSpecs(count, monthIndex);
+  const stems = buildBouquetSpecs(resolvedItems, monthIndex);
   const swayDelay = `${(monthIndex % 5) * 0.55}s`;
 
   return (
@@ -243,13 +320,12 @@ export default function VaseIllustration({
       aria-hidden="true"
     >
       {/* Soft shelf shadow */}
-      <ellipse cx="90" cy="196" rx="44" ry="7" fill="#3F322B" opacity="0.1" />
+      <ellipse cx="90" cy="196" rx="44" ry="7" fill="#3F322B" opacity="0.14" />
 
       {/* Animated stems, leaves & flowers */}
-      {count > 0 && (
+      {resolvedItems.length > 0 && (
         <g className="animate-sway" style={{ animationDelay: swayDelay }}>
-          {/* Extra lush bouquet foliage for 3+ memories */}
-          {count >= 3 && (
+          {resolvedItems.length >= 3 && (
             <g fill="#6B8E6E" opacity="0.88">
               <path d="M 88,132 Q 52,108 42,84 Q 68,94 86,124 Z" />
               <path d="M 92,132 Q 128,108 138,84 Q 112,94 94,124 Z" />
@@ -258,9 +334,11 @@ export default function VaseIllustration({
             </g>
           )}
 
-          {/* Stems & leaves */}
           {stems.map((stem, idx) => {
-            const startX = 90 + (idx - (stems.length - 1) / 2) * (count > 3 ? 2.2 : 0);
+            const startX =
+              90 +
+              (idx - (stems.length - 1) / 2) *
+                (resolvedItems.length > 3 ? 2.2 : 0);
             const midX = (startX + stem.endX) / 2 + (stem.ctrlX - 90) * 0.2;
             const midY = (134 + stem.endY) / 2 + 6;
 
@@ -270,7 +348,7 @@ export default function VaseIllustration({
                   d={`M ${startX},134 Q ${stem.ctrlX},${stem.ctrlY} ${stem.endX},${stem.endY}`}
                   fill="none"
                   stroke="#5C7D60"
-                  strokeWidth={count > 6 ? "2.4" : "3"}
+                  strokeWidth={resolvedItems.length > 6 ? "2.4" : "3"}
                   strokeLinecap="round"
                 />
                 {(stem.leafSide === "left" || stem.leafSide === "both") && (
@@ -289,14 +367,13 @@ export default function VaseIllustration({
             );
           })}
 
-          {/* Flower blooms */}
           {stems.map((stem, idx) =>
             renderFlowerHead(
               stem.endX,
               stem.endY,
               stem.scale,
               stem.rotation,
-              stem.colorIdx,
+              stem.colors,
               stem.kind,
               `flower-${idx}`
             )
@@ -304,10 +381,46 @@ export default function VaseIllustration({
         </g>
       )}
 
+      {/* Watering Dewdrops & Sparkles */}
+      {isWatered && (
+        <g pointerEvents="none">
+          {[
+            { x: 52, y: 42, delay: "0s" },
+            { x: 92, y: 28, delay: "0.2s" },
+            { x: 128, y: 48, delay: "0.35s" },
+            { x: 70, y: 74, delay: "0.15s" },
+            { x: 110, y: 80, delay: "0.4s" },
+          ].map((drop, i) => (
+            <path
+              key={`dew-${i}`}
+              d={`M ${drop.x},${drop.y} C ${drop.x - 4},${drop.y + 7} ${drop.x - 4},${drop.y + 11} ${drop.x},${drop.y + 11} C ${drop.x + 4},${drop.y + 11} ${drop.x + 4},${drop.y + 7} ${drop.x},${drop.y} Z`}
+              fill="#7FC4ED"
+              className="animate-dew"
+              style={{ animationDelay: drop.delay }}
+            />
+          ))}
+          {[
+            { x: 42, y: 66, delay: "0.1s" },
+            { x: 136, y: 64, delay: "0.3s" },
+            { x: 90, y: 18, delay: "0.2s" },
+          ].map((sp, i) => (
+            <path
+              key={`sparkle-${i}`}
+              d={`M ${sp.x},${sp.y - 6} L ${sp.x + 1.8},${sp.y - 1.8} L ${sp.x + 6},${sp.y} L ${sp.x + 1.8},${sp.y + 1.8} L ${sp.x},${sp.y + 6} L ${sp.x - 1.8},${sp.y + 1.8} L ${sp.x - 6},${sp.y} L ${sp.x - 1.8},${sp.y - 1.8} Z`}
+              fill="#F7D96E"
+              className="animate-sparkle"
+              style={{
+                transformOrigin: `${sp.x}px ${sp.y}px`,
+                animationDelay: sp.delay,
+              }}
+            />
+          ))}
+        </g>
+      )}
+
       {/* Vase Soil inside the opening */}
       <ellipse cx="90" cy="134" rx="26" ry="6.5" fill="#594134" />
       <ellipse cx="90" cy="133.5" rx="21" ry="4" fill="#463227" />
-      {/* Tiny soil pebbles */}
       <circle cx="79" cy="133" r="1.4" fill="#7C5E4D" />
       <circle cx="96" cy="134.5" r="1.6" fill="#7C5E4D" />
       <circle cx="104" cy="132.5" r="1.1" fill="#8C6C5A" />
@@ -317,15 +430,11 @@ export default function VaseIllustration({
         d="M 64,134 C 60,144 48,154 50,174 C 52,188 64,195 90,195 C 116,195 128,188 130,174 C 132,154 120,144 116,134 Z"
         fill={vase.body}
       />
-
-      {/* Right-side ceramic shading */}
       <path
         d="M 96,134 C 102,146 112,156 110,175 C 108,186 100,193 90,195 C 116,195 128,188 130,174 C 132,154 120,144 116,134 Z"
         fill={vase.shade}
         opacity="0.48"
       />
-
-      {/* Left-side soft glaze highlight */}
       <path
         d="M 65,146 C 59,156 58,170 62,180"
         fill="none"
@@ -334,8 +443,6 @@ export default function VaseIllustration({
         strokeLinecap="round"
         opacity="0.65"
       />
-
-      {/* Vase Rim */}
       <path
         d="M 60,133 C 60,137.5 120,137.5 120,133 C 120,136.5 117,140 90,140 C 63,140 60,136.5 60,133 Z"
         fill={vase.rim}
@@ -348,8 +455,6 @@ export default function VaseIllustration({
         strokeLinecap="round"
         opacity="0.7"
       />
-
-      {/* Subtle decorative band on vase */}
       <path
         d="M 52,167 Q 90,173 128,167"
         fill="none"

@@ -1,5 +1,16 @@
 import mysql, { Pool, RowDataPacket } from "mysql2/promise";
 
+export type MemoryMood = "date_night" | "travel" | "milestone" | "cozy";
+
+export interface MemoryReply {
+  id: number;
+  memory_id: number;
+  author: string;
+  message: string;
+  reaction: string | null;
+  created_at: string;
+}
+
 export interface Memory {
   id: number;
   memory_date: string;
@@ -7,10 +18,21 @@ export interface Memory {
   note: string;
   drive_file_id: string;
   uploaded_by: string;
+  mood: MemoryMood;
+  unlock_date: string | null;
   created_at: string;
+  replies?: MemoryReply[];
+}
+
+export interface WateringLog {
+  id: number;
+  watered_by: string;
+  watered_at: string;
 }
 
 export interface MemoryRow extends RowDataPacket, Memory {}
+export interface MemoryReplyRow extends RowDataPacket, MemoryReply {}
+export interface WateringLogRow extends RowDataPacket, WateringLog {}
 
 declare global {
   var __memoryGardenPool: Pool | undefined;
@@ -47,8 +69,8 @@ export function getDbPool(): Pool {
 export async function ensureMemoriesTable(): Promise<void> {
   if (!globalThis.__memoryGardenTableReady) {
     const pool = getDbPool();
-    globalThis.__memoryGardenTableReady = pool
-      .execute(
+    globalThis.__memoryGardenTableReady = (async () => {
+      await pool.execute(
         `CREATE TABLE IF NOT EXISTS memories (
           id INT AUTO_INCREMENT PRIMARY KEY,
           memory_date DATE NOT NULL,
@@ -56,14 +78,54 @@ export async function ensureMemoriesTable(): Promise<void> {
           note TEXT NOT NULL,
           drive_file_id VARCHAR(255) NOT NULL,
           uploaded_by VARCHAR(50) NOT NULL,
+          mood VARCHAR(32) NOT NULL DEFAULT 'cozy',
+          unlock_date DATE NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );`
-      )
-      .then(() => undefined)
-      .catch((error) => {
-        globalThis.__memoryGardenTableReady = undefined;
-        throw error;
-      });
+      );
+
+      // Safely add new columns if the table already existed from an earlier version
+      const [columns] = await pool.execute<RowDataPacket[]>(
+        `SELECT COLUMN_NAME
+         FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'memories'`
+      );
+      const colNames = new Set(columns.map((c) => String(c.COLUMN_NAME)));
+
+      if (!colNames.has("mood")) {
+        await pool.execute(
+          `ALTER TABLE memories ADD COLUMN mood VARCHAR(32) NOT NULL DEFAULT 'cozy'`
+        );
+      }
+      if (!colNames.has("unlock_date")) {
+        await pool.execute(
+          `ALTER TABLE memories ADD COLUMN unlock_date DATE NULL`
+        );
+      }
+
+      await pool.execute(
+        `CREATE TABLE IF NOT EXISTS memory_replies (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          memory_id INT NOT NULL,
+          author VARCHAR(50) NOT NULL,
+          message TEXT NOT NULL,
+          reaction VARCHAR(16) NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_memory_id (memory_id)
+        );`
+      );
+
+      await pool.execute(
+        `CREATE TABLE IF NOT EXISTS garden_watering (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          watered_by VARCHAR(50) NOT NULL,
+          watered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );`
+      );
+    })().catch((error) => {
+      globalThis.__memoryGardenTableReady = undefined;
+      throw error;
+    });
   }
 
   return globalThis.__memoryGardenTableReady;
