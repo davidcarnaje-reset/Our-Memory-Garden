@@ -91,15 +91,38 @@ function formatSpotlightDate(dateStr: string): string {
   });
 }
 
-function computePlantHealth(wateredAt: string | undefined): PlantHealth {
-  if (!wateredAt) return "fresh";
+function parseWateredMs(wateredAt: string | undefined): number | null {
+  if (!wateredAt) return null;
   const normalized = wateredAt.includes("T")
     ? wateredAt
     : wateredAt.replace(" ", "T") + "Z";
-  const time = new Date(normalized).getTime();
-  if (Number.isNaN(time)) return "fresh";
+  const ms = new Date(normalized).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
 
-  const diffDays = (Date.now() - time) / (1000 * 60 * 60 * 24);
+function isWateredWithin24h(wateredAt: string | undefined, nowMs: number): boolean {
+  const ms = parseWateredMs(wateredAt);
+  if (ms === null) return false;
+  return nowMs - ms < 1000 * 60 * 60 * 24;
+}
+
+function computeSharedPlantHealth(
+  latestByPartner: Record<string, string>,
+  partnerOptions: readonly string[],
+  nowMs: number
+): PlantHealth {
+  const timestamps = partnerOptions
+    .map((name) => parseWateredMs(latestByPartner[name]))
+    .filter((ms): ms is number => ms !== null);
+
+  // Brand-new garden before anyone has watered yet
+  if (timestamps.length === 0) return "fresh";
+
+  // If both partners have watered at least once, track from the more overdue partner;
+  // if only one has watered so far, track from the earliest watering so the other has 1 day to join.
+  const oldestMs = Math.min(...timestamps);
+  const diffDays = (nowMs - oldestMs) / (1000 * 60 * 60 * 24);
+
   if (diffDays >= 3) return "withered";
   if (diffDays >= 2) return "wilting";
   if (diffDays >= 1) return "thirsty";
@@ -132,8 +155,12 @@ export default function MemoryGardenApp({
 
   // Watering state
   const [wateringLog, setWateringLog] = useState<WateringLog | null>(null);
+  const [latestByPartner, setLatestByPartner] = useState<
+    Record<string, string>
+  >({});
   const [isWatering, setIsWatering] = useState(false);
   const [waterSparkleActive, setWaterSparkleActive] = useState(false);
+  const [nowMs, setNowMs] = useState<number>(0);
 
   // Day / Night Ambience
   const [ambienceMode, setAmbienceMode] = useState<AmbienceMode>("auto");
@@ -166,12 +193,17 @@ export default function MemoryGardenApp({
   const [plantHealth, setPlantHealth] = useState<PlantHealth>("fresh");
 
   useEffect(() => {
-    const updateHealth = () =>
-      setPlantHealth(computePlantHealth(wateringLog?.watered_at));
+    const updateHealth = () => {
+      const current = Date.now();
+      setNowMs(current);
+      setPlantHealth(
+        computeSharedPlantHealth(latestByPartner, partnerOptions, current)
+      );
+    };
     updateHealth();
     const interval = setInterval(updateHealth, 60_000);
     return () => clearInterval(interval);
-  }, [wateringLog]);
+  }, [latestByPartner, partnerOptions]);
 
   // Random Memory Spotlight
   const [spotlightMemory, setSpotlightMemory] = useState<Memory | null>(null);
@@ -259,6 +291,9 @@ export default function MemoryGardenApp({
           if (waterData.latest) {
             setWateringLog(waterData.latest);
           }
+          if (waterData.latestByPartner) {
+            setLatestByPartner(waterData.latestByPartner);
+          }
         }
 
         if (gardenRes.ok) {
@@ -305,8 +340,9 @@ export default function MemoryGardenApp({
         body: JSON.stringify({ wateredBy: uploadedBy }),
       });
       const data = await res.json();
-      if (res.ok && data.latest) {
-        setWateringLog(data.latest);
+      if (res.ok) {
+        if (data.latest) setWateringLog(data.latest);
+        if (data.latestByPartner) setLatestByPartner(data.latestByPartner);
       }
     } finally {
       setIsWatering(false);
@@ -500,46 +536,45 @@ export default function MemoryGardenApp({
             : "bg-[#FAF6F0]/85 border-[#E8DDD0]"
         }`}
       >
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+        <div className="max-w-6xl mx-auto px-3.5 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-2.5 sm:gap-4">
           {/* Brand */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div
-              className={`w-10 h-10 rounded-2xl border flex items-center justify-center ${
+              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-2xl border flex items-center justify-center shrink-0 ${
                 isNight
                   ? "bg-[#26322B] border-[#394A40] text-[#9BC09E]"
                   : "bg-[#E4EDE4] border-[#C9DBC9] text-[#5B7A5F]"
               }`}
             >
-              <Flower2 className="w-5 h-5" />
+              <Flower2 className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <h1
-                className={`font-[family-name:var(--font-serif)] text-xl sm:text-2xl font-semibold leading-tight ${
+                className={`font-[family-name:var(--font-serif)] text-lg sm:text-2xl font-semibold leading-tight truncate ${
                   isNight ? "text-[#F5EFE6]" : "text-[#3F322B]"
                 }`}
               >
                 Our Memory Garden
               </h1>
               <p
-                className={`text-xs flex items-center gap-1.5 ${
+                className={`text-[11px] sm:text-xs flex items-center gap-1 truncate ${
                   isNight ? "text-[#B5ACA0]" : "text-[#7D6B60]"
                 }`}
               >
-                <Sparkles className="w-3 h-3 text-[#C87A65]" />
+                <Sparkles className="w-3 h-3 text-[#C87A65] shrink-0" />
                 <span>
                   {totalFlowers}{" "}
-                  {totalFlowers === 1 ? "flower bloomed" : "flowers bloomed"} in{" "}
-                  {year}
+                  {totalFlowers === 1 ? "flower" : "flowers"} in {year}
                 </span>
               </p>
             </div>
           </div>
 
           {/* Controls */}
-          <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             {/* Year Switcher */}
             <div
-              className={`inline-flex items-center border rounded-2xl p-1 shadow-xs ${
+              className={`inline-flex items-center border rounded-2xl p-0.5 sm:p-1 shadow-xs ${
                 isNight
                   ? "bg-[#232B27] border-[#35403A]"
                   : "bg-[#FFFCF7] border-[#E4D9CB]"
@@ -552,16 +587,16 @@ export default function MemoryGardenApp({
                   setYear((y) => y - 1);
                 }}
                 aria-label="Previous year"
-                className={`p-1.5 rounded-xl transition cursor-pointer ${
+                className={`p-1 sm:p-1.5 rounded-xl transition cursor-pointer ${
                   isNight
                     ? "text-[#C5BCB0] hover:bg-[#313C36] hover:text-white"
                     : "text-[#6E5C51] hover:bg-[#F2E9DC] hover:text-[#3F322B]"
                 }`}
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
               <span
-                className={`px-3 text-sm font-semibold tabular-nums ${
+                className={`px-1.5 sm:px-3 text-xs sm:text-sm font-semibold tabular-nums ${
                   isNight ? "text-[#F5EFE6]" : "text-[#3F322B]"
                 }`}
               >
@@ -574,13 +609,13 @@ export default function MemoryGardenApp({
                   setYear((y) => y + 1);
                 }}
                 aria-label="Next year"
-                className={`p-1.5 rounded-xl transition cursor-pointer ${
+                className={`p-1 sm:p-1.5 rounded-xl transition cursor-pointer ${
                   isNight
                     ? "text-[#C5BCB0] hover:bg-[#313C36] hover:text-white"
                     : "text-[#6E5C51] hover:bg-[#F2E9DC] hover:text-[#3F322B]"
                 }`}
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
             </div>
 
@@ -589,7 +624,7 @@ export default function MemoryGardenApp({
               type="button"
               onClick={cycleAmbience}
               title={`Ambience: ${ambienceMode} (click to switch)`}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl border text-xs font-medium transition cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 p-2 sm:px-3 sm:py-2 rounded-2xl border text-xs font-medium transition cursor-pointer ${
                 isNight
                   ? "bg-[#232B27] border-[#35403A] text-[#F7DF86] hover:bg-[#2C3631]"
                   : "bg-[#FFFCF7] border-[#E4D9CB] text-[#6E5C51] hover:bg-[#F2E9DC]"
@@ -632,8 +667,8 @@ export default function MemoryGardenApp({
       </header>
 
       {/* Garden Action Bar: View Toggle, Watering Can & Random Flower */}
-      <div className="relative z-10 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2.5">
+      <div className="relative z-10 max-w-6xl w-full mx-auto px-3.5 sm:px-6 pt-4 sm:pt-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
           {/* Monthly Shelf / Garden Place Toggle */}
           <div
             className={`inline-flex items-center p-1 rounded-2xl border ${
@@ -676,7 +711,7 @@ export default function MemoryGardenApp({
             type="button"
             onClick={handleWaterGarden}
             disabled={isWatering}
-            className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs sm:text-sm font-medium border shadow-xs transition cursor-pointer ${
+            className={`inline-flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-2 rounded-2xl text-xs sm:text-sm font-medium border shadow-xs transition cursor-pointer ${
               waterSparkleActive
                 ? "bg-[#659EC7] border-[#538AB2] text-white"
                 : plantHealth === "withered"
@@ -693,43 +728,64 @@ export default function MemoryGardenApp({
             />
             <span>
               {waterSparkleActive
-                ? "Garden Watered!"
+                ? "Watered!"
                 : plantHealth === "withered"
                   ? "Revive Garden!"
-                  : "Water the Garden"}
+                  : isWateredWithin24h(latestByPartner[uploadedBy], nowMs)
+                    ? "Watered Today ✓"
+                    : "Water Garden"}
             </span>
           </button>
 
-          {wateringLog && (
-            <span
-              className={`text-xs px-3 py-1.5 rounded-full ${
-                plantHealth === "withered"
-                  ? "bg-[#FDF0EE] text-[#A94E43] font-medium"
-                  : plantHealth === "wilting"
-                    ? "bg-[#FDF4E7] text-[#9A601E] font-medium"
-                    : plantHealth === "thirsty"
-                      ? "bg-[#FBF6E8] text-[#8A6D29]"
+          {/* Both-Partner Daily Watering Checklist */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {partnerOptions.map((partner) => {
+              const wateredToday =
+                nowMs > 0 && isWateredWithin24h(latestByPartner[partner], nowMs);
+              return (
+                <span
+                  key={partner}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border ${
+                    wateredToday
+                      ? isNight
+                        ? "bg-[#26382B] border-[#3A5942] text-[#A4D4AC]"
+                        : "bg-[#E4EDE4] border-[#C6DBC7] text-[#426346]"
                       : isNight
-                        ? "bg-[#232B27]/90 text-[#B5ACA0]"
-                        : "bg-[#EFE7DA]/80 text-[#6F5E53]"
-              }`}
-            >
-              {plantHealth === "withered"
-                ? "Withered (3+ days without water)"
-                : plantHealth === "wilting"
-                  ? "Wilting (2 days) • Needs water!"
-                  : plantHealth === "thirsty"
-                    ? "Getting thirsty • Water today"
-                    : `Last watered by ${wateringLog.watered_by} • ${formatWateredTime(wateringLog.watered_at)}`}
-            </span>
-          )}
+                        ? "bg-[#232B27] border-[#35403A] text-[#B5ACA0]"
+                        : "bg-[#F6EFE5] border-[#E4D9CB] text-[#7A685D]"
+                  }`}
+                >
+                  <span>{wateredToday ? "💧" : "⏳"}</span>
+                  <span>{partner}</span>
+                </span>
+              );
+            })}
+
+            {wateringLog && plantHealth !== "fresh" && (
+              <span
+                className={`text-[11px] px-2.5 py-1 rounded-full font-medium ${
+                  plantHealth === "withered"
+                    ? "bg-[#FDF0EE] text-[#A94E43]"
+                    : plantHealth === "wilting"
+                      ? "bg-[#FDF4E7] text-[#9A601E]"
+                      : "bg-[#FBF6E8] text-[#8A6D29]"
+                }`}
+              >
+                {plantHealth === "withered"
+                  ? "Withered (3+ days)"
+                  : plantHealth === "wilting"
+                    ? "Wilting (2 days)"
+                    : "Thirsty (1 day)"}
+              </span>
+            )}
+          </div>
         </div>
 
         <button
           type="button"
           onClick={handlePickRandomFlower}
           disabled={isPickingRandom}
-          className={`inline-flex items-center gap-2 px-4 py-2 rounded-2xl text-xs sm:text-sm font-medium border shadow-xs transition cursor-pointer ${
+          className={`inline-flex items-center justify-center gap-2 px-4 py-2 rounded-2xl text-xs sm:text-sm font-medium border shadow-xs transition cursor-pointer w-full sm:w-auto ${
             isNight
               ? "bg-[#2B2523] border-[#453A36] text-[#F2B5A5] hover:bg-[#362E2B]"
               : "bg-[#FFFCF7] border-[#EAD9D2] text-[#A85D4A] hover:bg-[#FDF2EE]"
@@ -747,7 +803,7 @@ export default function MemoryGardenApp({
       </div>
 
       {/* Main Garden Shelf Grid */}
-      <main className="relative z-10 flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8">
+      <main className="relative z-10 flex-1 max-w-6xl w-full mx-auto px-3.5 sm:px-6 py-5 sm:py-8">
         {loadError && (
           <div className="mb-6 rounded-2xl bg-[#FDF0EE] border border-[#F0C8C2] px-4 py-3 text-sm text-[#A94E43] flex items-center justify-between gap-4">
             <span>{loadError}</span>
@@ -789,7 +845,7 @@ export default function MemoryGardenApp({
             onOpenMonth={(idx) => setSelectedMonthIndex(idx)}
           />
         ) : (
-          <div className="grid grid-cols-1 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
             {MONTHS.map((monthName, monthIndex) => {
               const monthKey = `${year}-${String(monthIndex + 1).padStart(
                 2,
@@ -803,7 +859,7 @@ export default function MemoryGardenApp({
                   key={monthKey}
                   type="button"
                   onClick={() => setSelectedMonthIndex(monthIndex)}
-                  className={`group relative flex flex-col items-center justify-between rounded-3xl border p-4 sm:p-5 hover:-translate-y-1 transition-all duration-300 cursor-pointer text-center ${
+                  className={`group relative flex flex-col items-center justify-between rounded-2xl sm:rounded-3xl border p-3 sm:p-5 hover:-translate-y-1 transition-all duration-300 cursor-pointer text-center ${
                     isNight
                       ? "bg-[#232B27]/90 border-[#35403A] hover:border-[#56695E] shadow-[0_12px_30px_-14px_rgba(0,0,0,0.6)]"
                       : "bg-[#FFFCF7] border-[#E7DDD0] hover:border-[#C8B8A4] shadow-[0_8px_24px_-12px_rgba(74,59,50,0.12)] hover:shadow-[0_18px_36px_-14px_rgba(74,59,50,0.2)]"

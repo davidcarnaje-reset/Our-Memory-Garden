@@ -237,7 +237,7 @@ export default function GardenPlace({
       <div
         ref={containerRef}
         onClick={() => setSelectedMonthKey(null)}
-        className={`relative w-full h-[420px] sm:h-[500px] rounded-[2rem] border overflow-hidden select-none shadow-lg transition-colors duration-700 ${canvasBgClass}`}
+        className={`relative w-full h-[340px] sm:h-[500px] rounded-[1.5rem] sm:rounded-[2rem] border overflow-hidden select-none shadow-lg transition-colors duration-700 ${canvasBgClass}`}
       >
         {/* Illustrated Garden Backdrop SVG */}
         <svg
@@ -497,7 +497,7 @@ export default function GardenPlace({
           const monthMemories = memoriesByMonth[placement.month_key] ?? [];
           const isSelected = selectedMonthKey === placement.month_key;
           const isDragging = draggingState?.monthKey === placement.month_key;
-          const widthPx = Math.round(108 * placement.scale);
+          const baseWidth = `clamp(68px, 17vw, 112px)`;
 
           return (
             <div
@@ -509,7 +509,7 @@ export default function GardenPlace({
               style={{
                 left: `${placement.x_percent}%`,
                 top: `${placement.y_percent}%`,
-                width: `${widthPx}px`,
+                width: `calc(${baseWidth} * ${placement.scale})`,
                 transform: "translate(-50%, -82%)",
                 zIndex: isDragging ? 40 : Math.round(placement.y_percent),
               }}

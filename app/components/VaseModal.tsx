@@ -710,7 +710,7 @@ export default function VaseModal({
                 <label className="block text-xs font-semibold uppercase tracking-wider text-[#7A685D] mb-2">
                   Mood / Flower Species
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2">
                   {MOOD_OPTIONS.map((opt) => {
                     const isSelected = mood === opt.value;
                     return (
