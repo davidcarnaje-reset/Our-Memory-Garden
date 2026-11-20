@@ -4,6 +4,9 @@ import React, { useRef, useState } from "react";
 import {
   Eye,
   Flower2,
+  Gem,
+  Loader2,
+  Lock,
   Move,
   Plus,
   Sparkles,
@@ -12,16 +15,30 @@ import {
 import type { GardenPlacement, Memory } from "@/src/lib/db";
 import VaseIllustration, { type PlantHealth } from "./VaseIllustration";
 
-export type GardenTheme = "peaceful" | "fantasy" | "wonderful";
+export type GardenTheme =
+  | "peaceful"
+  | "fantasy"
+  | "wonderful"
+  | "cherry_blossom"
+  | "starry_tent"
+  | "paris_eiffel"
+  | "lantern_lake";
+
+const SCENERY_SHARD_COST = 10;
 
 const THEME_OPTIONS: {
   value: GardenTheme;
   label: string;
   emoji: string;
+  cost: number;
 }[] = [
-  { value: "peaceful", label: "Peaceful", emoji: "🌿" },
-  { value: "fantasy", label: "Fantasy", emoji: "✨" },
-  { value: "wonderful", label: "Wonderful", emoji: "🌈" },
+  { value: "peaceful", label: "Peaceful", emoji: "🌿", cost: 0 },
+  { value: "fantasy", label: "Fantasy", emoji: "✨", cost: 0 },
+  { value: "wonderful", label: "Wonderful", emoji: "🌈", cost: 0 },
+  { value: "cherry_blossom", label: "Cherry Blossom", emoji: "🌸", cost: 10 },
+  { value: "starry_tent", label: "Starry Night Tent", emoji: "⛺", cost: 10 },
+  { value: "paris_eiffel", label: "Paris Eiffel", emoji: "🗼", cost: 10 },
+  { value: "lantern_lake", label: "Lantern Lake", emoji: "🏮", cost: 10 },
 ];
 
 const MONTHS = [
@@ -48,7 +65,10 @@ interface GardenPlaceProps {
   isWatered: boolean;
   plantHealth: PlantHealth;
   theme: GardenTheme;
+  unlockedSceneries: string[];
+  vaseShards: number;
   onChangeTheme: (theme: GardenTheme) => void;
+  onUnlockScenery: (sceneryCode: string) => Promise<void>;
   onSavePlacement: (
     monthKey: string,
     xPercent: number,
@@ -68,13 +88,23 @@ export default function GardenPlace({
   isWatered,
   plantHealth,
   theme,
+  unlockedSceneries,
+  vaseShards,
   onChangeTheme,
+  onUnlockScenery,
   onSavePlacement,
   onRemovePlacement,
   onOpenMonth,
 }: GardenPlaceProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [selectedMonthKey, setSelectedMonthKey] = useState<string | null>(null);
+  const [pendingUnlockTheme, setPendingUnlockTheme] = useState<{
+    value: GardenTheme;
+    label: string;
+    emoji: string;
+  } | null>(null);
+  const [isUnlockingScenery, setIsUnlockingScenery] = useState(false);
+  const [unlockError, setUnlockError] = useState<string | null>(null);
   const [draggingState, setDraggingState] = useState<{
     monthKey: string;
     x: number;
@@ -179,60 +209,163 @@ export default function GardenPlace({
     }
   }
 
+  const unlockedScenerySet = new Set(unlockedSceneries);
+
+  async function handleConfirmUnlock() {
+    if (!pendingUnlockTheme) return;
+    setIsUnlockingScenery(true);
+    setUnlockError(null);
+    try {
+      await onUnlockScenery(pendingUnlockTheme.value);
+      onChangeTheme(pendingUnlockTheme.value);
+      setPendingUnlockTheme(null);
+    } catch (err) {
+      setUnlockError(
+        err instanceof Error ? err.message : "Could not unlock scenery."
+      );
+    } finally {
+      setIsUnlockingScenery(false);
+    }
+  }
+
   const canvasBgClass =
-    theme === "fantasy"
+    theme === "cherry_blossom"
       ? isNight
-        ? "border-[#3D3552] bg-gradient-to-b from-[#1A1630] via-[#282246] to-[#24323A]"
-        : "border-[#D6CBE8] bg-gradient-to-b from-[#E3D8F5] via-[#DCE7F2] to-[#B7D5C4]"
-      : theme === "wonderful"
-        ? isNight
-          ? "border-[#4A3A47] bg-gradient-to-b from-[#23192D] via-[#3A273D] to-[#2A3B34]"
-          : "border-[#E9D3B8] bg-gradient-to-b from-[#FCE6C9] via-[#F7ECDA] to-[#B9D4A7]"
-        : isNight
-          ? "border-[#35403A] bg-gradient-to-b from-[#172026] via-[#21302B] to-[#273B2D]"
-          : "border-[#DFD2C1] bg-gradient-to-b from-[#DCEEF4] via-[#E9F2E4] to-[#BBD1AE]";
+        ? "border-[#4A3548] bg-gradient-to-b from-[#23192B] via-[#3A2842] to-[#2C3A32]"
+        : "border-[#F0CFD9] bg-gradient-to-b from-[#FCE6EE] via-[#FDF2F6] to-[#BBD4AE]"
+      : theme === "starry_tent"
+        ? "border-[#2B3759] bg-gradient-to-b from-[#0E1838] via-[#1B2D5C] to-[#1A2D28]"
+        : theme === "paris_eiffel"
+          ? isNight
+            ? "border-[#453952] bg-gradient-to-b from-[#1B1830] via-[#372B4D] to-[#24322B]"
+            : "border-[#ECD5CE] bg-gradient-to-b from-[#FAD9CE] via-[#F9ECE4] to-[#B0C9A4]"
+          : theme === "lantern_lake"
+            ? "border-[#384159] bg-gradient-to-b from-[#151D33] via-[#26324E] to-[#1D2D3B]"
+            : theme === "fantasy"
+              ? isNight
+                ? "border-[#3D3552] bg-gradient-to-b from-[#1A1630] via-[#282246] to-[#24323A]"
+                : "border-[#D6CBE8] bg-gradient-to-b from-[#E3D8F5] via-[#DCE7F2] to-[#B7D5C4]"
+              : theme === "wonderful"
+                ? isNight
+                  ? "border-[#4A3A47] bg-gradient-to-b from-[#23192D] via-[#3A273D] to-[#2A3B34]"
+                  : "border-[#E9D3B8] bg-gradient-to-b from-[#FCE6C9] via-[#F7ECDA] to-[#B9D4A7]"
+                : isNight
+                  ? "border-[#35403A] bg-gradient-to-b from-[#172026] via-[#21302B] to-[#273B2D]"
+                  : "border-[#DFD2C1] bg-gradient-to-b from-[#DCEEF4] via-[#E9F2E4] to-[#BBD1AE]";
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Top hint & theme selector bar */}
       <div
-        className={`rounded-2xl px-4 py-3 border flex flex-wrap items-center justify-between gap-3 text-xs ${
+        className={`rounded-2xl px-4 py-3 border flex flex-col gap-2.5 text-xs ${
           isNight
             ? "bg-[#232B27]/90 border-[#35403A] text-[#C8C0B4]"
             : "bg-[#FFFCF7] border-[#E7DDD0] text-[#6E5C51]"
         }`}
       >
-        <div className="flex items-center gap-2">
-          <Move className="w-4 h-4 text-[#C87A65] shrink-0" />
-          <span>
-            Drag any vase to arrange your garden ({visiblePlacements.length}{" "}
-            placed in {year}).
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Move className="w-4 h-4 text-[#C87A65] shrink-0" />
+            <span>
+              Drag any vase to arrange your garden ({visiblePlacements.length}{" "}
+              placed in {year}).
+            </span>
+          </div>
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#2F5E82]">
+            <Gem className="w-3.5 h-3.5 text-[#4EA0D8]" />
+            {vaseShards} Shards
           </span>
         </div>
 
-        {/* 3 Garden Background Choices */}
-        <div className="flex items-center gap-1.5">
+        {/* Garden Background Choices (Free + 10-Shard Unlockables) */}
+        <div className="flex flex-wrap items-center gap-1.5">
           {THEME_OPTIONS.map((opt) => {
+            const isUnlocked = opt.cost === 0 || unlockedScenerySet.has(opt.value);
             const active = theme === opt.value;
             return (
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => onChangeTheme(opt.value)}
-                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                onClick={() => {
+                  if (isUnlocked) {
+                    setPendingUnlockTheme(null);
+                    setUnlockError(null);
+                    onChangeTheme(opt.value);
+                  } else {
+                    setUnlockError(null);
+                    setPendingUnlockTheme(opt);
+                  }
+                }}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
                   active
                     ? "bg-[#6D8C70] border-[#5B7A5F] text-white shadow-xs"
-                    : isNight
-                      ? "bg-[#2B342F] border-[#3C4841] text-[#C8C0B4] hover:border-[#6D8C70]"
-                      : "bg-[#FAF6F0] border-[#E4D9CB] text-[#5C4C42] hover:border-[#C87A65]"
+                    : !isUnlocked
+                      ? isNight
+                        ? "bg-[#1D2420] border-[#35403A] text-[#9E968B] hover:border-[#C87A65]"
+                        : "bg-[#F5EFE6] border-[#E4D9CB] text-[#7D6B60] hover:border-[#C87A65]"
+                      : isNight
+                        ? "bg-[#2B342F] border-[#3C4841] text-[#C8C0B4] hover:border-[#6D8C70]"
+                        : "bg-[#FAF6F0] border-[#E4D9CB] text-[#5C4C42] hover:border-[#C87A65]"
                 }`}
               >
                 <span>{opt.emoji}</span>
                 <span>{opt.label}</span>
+                {!isUnlocked && (
+                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-[#DCEAF5] text-[#2F5E82] text-[10px]">
+                    <Lock className="w-2.5 h-2.5" />
+                    {opt.cost}
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
+
+        {/* Unlock Scenery Prompt */}
+        {pendingUnlockTheme && (
+          <div className="rounded-xl bg-[#EEF6FB] border border-[#CBE0EE] px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-[#2E485C]">
+            <div>
+              <p className="font-semibold">
+                Unlock {pendingUnlockTheme.emoji} {pendingUnlockTheme.label} for{" "}
+                {SCENERY_SHARD_COST} Shards?
+              </p>
+              {unlockError && (
+                <p className="text-[11px] text-[#A94E43] mt-0.5">{unlockError}</p>
+              )}
+              {!unlockError && vaseShards < SCENERY_SHARD_COST && (
+                <p className="text-[11px] text-[#7A685D] mt-0.5">
+                  You currently have {vaseShards} Shards — earn more from co-op
+                  watering &amp; 7-day streaks!
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                disabled={isUnlockingScenery || vaseShards < SCENERY_SHARD_COST}
+                onClick={handleConfirmUnlock}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#4E89B5] hover:bg-[#3F78A3] disabled:opacity-50 text-white font-semibold cursor-pointer"
+              >
+                {isUnlockingScenery ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Gem className="w-3.5 h-3.5" />
+                )}
+                <span>Unlock (10 Shards)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingUnlockTheme(null);
+                  setUnlockError(null);
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-white/80 hover:bg-white text-[#5C4C42] font-medium cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Interactive Garden Canvas */}
@@ -249,19 +382,23 @@ export default function GardenPlace({
           aria-hidden="true"
         >
           {/* Sky: Sun or Crescent Moon & Stars */}
-          {isNight ? (
+          {isNight || theme === "starry_tent" || theme === "lantern_lake" ? (
             <>
-              <circle cx="1020" cy="92" r="32" fill="#F8E7A1" opacity="0.92" />
+              <circle cx="1020" cy="92" r="32" fill="#F8E7A1" opacity="0.95" />
               <circle
                 cx="1034"
                 cy="84"
                 r="28"
                 fill={
-                  theme === "fantasy"
-                    ? "#1A1630"
-                    : theme === "wonderful"
-                      ? "#23192D"
-                      : "#172026"
+                  theme === "starry_tent"
+                    ? "#0E1838"
+                    : theme === "lantern_lake"
+                      ? "#151D33"
+                      : theme === "fantasy"
+                        ? "#1A1630"
+                        : theme === "wonderful"
+                          ? "#23192D"
+                          : "#172026"
                 }
               />
               {[
@@ -277,9 +414,9 @@ export default function GardenPlace({
                   key={i}
                   cx={sx}
                   cy={sy}
-                  r={i % 2 === 0 ? 2.2 : 1.5}
+                  r={i % 2 === 0 ? 2.4 : 1.6}
                   fill="#FFF7D6"
-                  opacity="0.8"
+                  opacity="0.85"
                 />
               ))}
             </>
@@ -288,6 +425,58 @@ export default function GardenPlace({
               <circle cx="1030" cy="95" r="46" fill="#FCE59B" opacity="0.85" />
               <circle cx="1030" cy="95" r="78" fill="#FCE59B" opacity="0.28" />
             </>
+          )}
+
+          {/* Starry Night Van Gogh Swirls */}
+          {theme === "starry_tent" && (
+            <g fill="none" stroke="#6E94DB" strokeLinecap="round" opacity="0.35">
+              <path d="M 160,115 C 210,75 280,145 330,105" strokeWidth="10" />
+              <path d="M 480,90 C 540,50 610,130 670,85" strokeWidth="12" />
+              <circle cx="240" cy="110" r="26" strokeWidth="6" strokeDasharray="18 10" />
+              <circle cx="580" cy="88" r="32" strokeWidth="7" strokeDasharray="22 12" />
+            </g>
+          )}
+
+          {/* Cherry Blossom Drifting Petals */}
+          {theme === "cherry_blossom" && (
+            <g fill="#F6AEC4" opacity="0.85">
+              {[
+                [190, 140],
+                [320, 180],
+                [480, 120],
+                [670, 165],
+                [820, 130],
+                [970, 175],
+              ].map(([px, py], idx) => (
+                <ellipse
+                  key={idx}
+                  cx={px}
+                  cy={py}
+                  rx="6"
+                  ry="3.5"
+                  transform={`rotate(${idx * 35} ${px} ${py})`}
+                />
+              ))}
+            </g>
+          )}
+
+          {/* Lantern Lake Floating Sky Lanterns */}
+          {theme === "lantern_lake" && (
+            <g>
+              {[
+                [210, 125, 0.9],
+                [380, 90, 0.75],
+                [560, 140, 1.05],
+                [760, 105, 0.85],
+                [900, 150, 0.7],
+              ].map(([lx, ly, sc], idx) => (
+                <g key={idx} transform={`translate(${lx}, ${ly}) scale(${sc})`}>
+                  <circle cx="12" cy="14" r="24" fill="#F9B85C" opacity="0.22" />
+                  <rect x="3" y="0" width="18" height="24" rx="5" fill="#F59E42" />
+                  <rect x="6" y="4" width="12" height="16" rx="3" fill="#FFE699" />
+                </g>
+              ))}
+            </g>
           )}
 
           {/* Theme-specific sky accents */}
@@ -393,7 +582,70 @@ export default function GardenPlace({
           />
 
           {/* Theme-specific scenery */}
-          {theme === "fantasy" ? (
+          {theme === "cherry_blossom" ? (
+            <>
+              {/* Sakura Tree Left & Right + Curved Bridge */}
+              <g transform="translate(70, 125)">
+                <path d="M55,180 Q65,120 48,70" stroke="#6E4E3D" strokeWidth="14" fill="none" strokeLinecap="round" />
+                <circle cx="38" cy="65" r="44" fill="#F8BBD0" />
+                <circle cx="72" cy="58" r="38" fill="#F48FB1" opacity="0.85" />
+                <circle cx="52" cy="38" r="34" fill="#FCE4EC" opacity="0.9" />
+              </g>
+              <g transform="translate(950, 140)">
+                <path d="M60,170 Q50,115 65,65" stroke="#6E4E3D" strokeWidth="12" fill="none" strokeLinecap="round" />
+                <circle cx="62" cy="60" r="42" fill="#F8BBD0" />
+                <circle cx="36" cy="70" r="32" fill="#F48FB1" opacity="0.85" />
+              </g>
+              <path d="M460,315 Q600,275 740,315" fill="none" stroke="#9C6B4E" strokeWidth="12" strokeLinecap="round" />
+            </>
+          ) : theme === "starry_tent" ? (
+            <>
+              {/* Cozy Illuminated Camping Tent & Campfire */}
+              <g transform="translate(150, 215)">
+                <polygon points="0,95 75,15 150,95" fill="#D98348" />
+                <polygon points="75,15 150,95 110,95" fill="#B5622C" />
+                <polygon points="52,95 75,45 98,95" fill="#FCE38A" />
+              </g>
+              <g transform="translate(330, 285)">
+                <circle cx="16" cy="14" r="24" fill="#F79D42" opacity="0.25" />
+                <path d="M16,2 C24,12 24,24 16,24 C8,24 8,12 16,2 Z" fill="#F79D42" />
+                <path d="M16,9 C20,15 20,22 16,22 C12,22 12,15 16,9 Z" fill="#FFE680" />
+                <rect x="4" y="23" width="24" height="5" rx="2" fill="#5C3E2B" />
+              </g>
+              {/* Pine tree silhouettes */}
+              <g fill="#162922" opacity="0.9">
+                <polygon points="980,295 1015,200 1050,295" />
+                <polygon points="1040,305 1070,225 1100,305" />
+              </g>
+            </>
+          ) : theme === "paris_eiffel" ? (
+            <>
+              {/* Eiffel Tower Silhouette */}
+              <g transform="translate(515, 72)" opacity={isNight ? 0.92 : 0.88}>
+                <path
+                  d="M85,0 L88,45 L104,135 L138,215 L112,215 Q85,175 58,215 L32,215 L66,135 L82,45 Z"
+                  fill={isNight ? "#5C4D6B" : "#7A6A72"}
+                />
+                <rect x="64" y="132" width="42" height="7" rx="2" fill="#D8AE5E" />
+                <rect x="74" y="82" width="22" height="5" rx="2" fill="#D8AE5E" />
+                {isNight && (
+                  <circle cx="85" cy="12" r="14" fill="#FFE88A" opacity="0.55" />
+                )}
+              </g>
+              {/* Parisian Park Lamppost */}
+              <g transform="translate(185, 200)">
+                <rect x="12" y="25" width="6" height="82" fill="#363238" />
+                <circle cx="15" cy="20" r="10" fill="#FFE89E" opacity="0.9" />
+              </g>
+            </>
+          ) : theme === "lantern_lake" ? (
+            <>
+              {/* Shimmering Twilight Lake */}
+              <ellipse cx="600" cy="340" rx="460" ry="42" fill="#2A445E" opacity="0.82" />
+              <ellipse cx="260" cy="342" rx="18" ry="5" fill="#F9B85C" opacity="0.55" />
+              <ellipse cx="890" cy="336" rx="22" ry="6" fill="#F9B85C" opacity="0.55" />
+            </>
+          ) : theme === "fantasy" ? (
             <>
               {/* Glowing Crystal Mushrooms */}
               <g transform="translate(170, 265)">

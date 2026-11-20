@@ -5,6 +5,7 @@ import {
   GardenStatsRow,
   getDbPool,
   MonthVaseEquipRow,
+  UnlockedSceneryRow,
   UnlockedVaseRow,
 } from "@/src/lib/db";
 
@@ -38,6 +39,10 @@ export async function GET(request: NextRequest) {
       [`${yearParam}-%`]
     );
 
+    const [sceneryRows] = await pool.execute<UnlockedSceneryRow[]>(
+      `SELECT scenery_code FROM unlocked_sceneries ORDER BY unlocked_at ASC`
+    );
+
     const rawStats = statsRows[0];
     const stats = rawStats
       ? {
@@ -57,6 +62,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       stats,
       unlockedVases: unlockedRows.map((r) => r.vase_code),
+      unlockedSceneries: sceneryRows.map((r) => r.scenery_code),
       equippedVases: Object.fromEntries(
         equipRows.map((r) => [r.month_key, r.vase_code])
       ),

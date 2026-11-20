@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { Check, Gem, Loader2, Lock, Sparkles, X } from "lucide-react";
 import {
-  SHARD_COST,
+  getVaseShardCost,
   SPECIAL_VASES,
   STARTER_VASE,
   VASE_THEMES,
@@ -105,7 +105,7 @@ export default function VaseBoutiqueModal({
             </div>
             <p className="text-xs text-[#7D6B60] mt-1">
               Earn Vase Shards from co-op watering (+1) and 7-day streaks (+5).
-              Every special vase costs {SHARD_COST} Shards.
+              Common = 2, Uncommon = 3, Rare = 4, Epic/Mythic = 5 Shards.
             </p>
           </div>
 
@@ -152,7 +152,8 @@ export default function VaseBoutiqueModal({
             {filteredVases.map((vase, idx) => {
               const isUnlocked = unlockedSet.has(vase.code);
               const isBusy = busyCode === vase.code;
-              const canAfford = vaseShards >= SHARD_COST;
+              const cost = getVaseShardCost(vase.rarity);
+              const canAfford = vaseShards >= cost;
 
               return (
                 <div
@@ -230,7 +231,7 @@ export default function VaseBoutiqueModal({
                         ) : (
                           <Gem className="w-3.5 h-3.5" />
                         )}
-                        <span>Unlock ({SHARD_COST} Shards)</span>
+                        <span>Unlock ({cost} Shards)</span>
                       </button>
                     </div>
                   )}

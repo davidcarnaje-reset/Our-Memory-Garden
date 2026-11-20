@@ -6,9 +6,9 @@ import {
   getDbPool,
   UnlockedVaseRow,
 } from "@/src/lib/db";
-import { SHARD_COST, SPECIAL_VASES } from "@/src/lib/vaseCatalog";
+import { getVaseShardCost, SPECIAL_VASES } from "@/src/lib/vaseCatalog";
 
-const VALID_SPECIAL_CODES = new Set(SPECIAL_VASES.map((v) => v.code));
+const VASES_BY_CODE = new Map(SPECIAL_VASES.map((v) => [v.code, v]));
 
 export async function POST(request: NextRequest) {
   const session = await getAuthenticatedSession();
@@ -20,12 +20,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const vaseCode = typeof body?.vase_code === "string" ? body.vase_code.trim() : "";
 
-    if (!VALID_SPECIAL_CODES.has(vaseCode)) {
+    const targetVase = VASES_BY_CODE.get(vaseCode);
+    if (!targetVase) {
       return NextResponse.json(
         { error: "Unknown special vase." },
         { status: 400 }
       );
     }
+
+    const cost = getVaseShardCost(targetVase.rarity);
 
     await ensureMemoriesTable();
     const pool = getDbPool();
@@ -49,14 +52,14 @@ export async function POST(request: NextRequest) {
     );
 
     const stats = statsRows[0];
-    if (!stats || stats.vase_shards < SHARD_COST) {
+    if (!stats || stats.vase_shards < cost) {
       return NextResponse.json(
-        { error: `You need ${SHARD_COST} Vase Shards to unlock this vase.` },
+        { error: `You need ${cost} Vase Shards to unlock this vase.` },
         { status: 400 }
       );
     }
 
-    const newShards = stats.vase_shards - SHARD_COST;
+    const newShards = stats.vase_shards - cost;
     await pool.execute(
       `UPDATE garden_stats SET vase_shards = ? WHERE id = 1`,
       [newShards]

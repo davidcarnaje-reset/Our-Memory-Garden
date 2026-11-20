@@ -60,6 +60,15 @@ export interface MonthVaseEquip {
   vase_code: string;
 }
 
+export interface DailyWaterEntry {
+  id: number;
+  cycle_key: string;
+  uploaded_by: string;
+  caption: string | null;
+  drive_file_ids: string[];
+  created_at: string;
+}
+
 export interface MemoryRow extends RowDataPacket {
   id: number;
   memory_date: string;
@@ -106,6 +115,18 @@ export interface GardenStatsRow extends RowDataPacket {
 }
 export interface UnlockedVaseRow extends RowDataPacket, UnlockedVase {}
 export interface MonthVaseEquipRow extends RowDataPacket, MonthVaseEquip {}
+export interface UnlockedSceneryRow extends RowDataPacket {
+  scenery_code: string;
+  unlocked_at: string;
+}
+export interface DailyWaterPhotoRow extends RowDataPacket {
+  id: number;
+  cycle_key: string;
+  uploaded_by: string;
+  caption: string | null;
+  drive_file_ids: string;
+  created_at: string;
+}
 
 declare global {
   var __memoryGardenPool: Pool | undefined;
@@ -240,6 +261,25 @@ export async function ensureMemoriesTable(): Promise<void> {
         `CREATE TABLE IF NOT EXISTS month_vase_equip (
           month_key VARCHAR(7) PRIMARY KEY,
           vase_code VARCHAR(50) NOT NULL
+        );`
+      );
+
+      await pool.execute(
+        `CREATE TABLE IF NOT EXISTS daily_water_photos (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          cycle_key VARCHAR(10) NOT NULL,
+          uploaded_by VARCHAR(50) NOT NULL,
+          caption VARCHAR(255) NULL,
+          drive_file_ids TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_cycle_key (cycle_key)
+        );`
+      );
+
+      await pool.execute(
+        `CREATE TABLE IF NOT EXISTS unlocked_sceneries (
+          scenery_code VARCHAR(50) PRIMARY KEY,
+          unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );`
       );
     })().catch((error) => {

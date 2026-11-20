@@ -5,7 +5,7 @@ import { ensureMemoriesTable, getDbPool, WateringLogRow } from "@/src/lib/db";
 
 interface PartnerLatestRow extends RowDataPacket {
   watered_by: string;
-  latest_at: string;
+  latest_epoch_ms: number;
 }
 
 async function getWateringSummary() {
@@ -18,14 +18,18 @@ async function getWateringSummary() {
   );
 
   const [partnerRows] = await pool.execute<PartnerLatestRow[]>(
-    `SELECT watered_by, MAX(watered_at) AS latest_at
+    `SELECT watered_by, UNIX_TIMESTAMP(MAX(watered_at)) * 1000 AS latest_epoch_ms
      FROM garden_watering
      GROUP BY watered_by`
   );
 
   const latestByPartner: Record<string, string> = {};
   for (const row of partnerRows) {
-    latestByPartner[row.watered_by] = row.latest_at;
+    if (row.latest_epoch_ms) {
+      latestByPartner[row.watered_by] = new Date(
+        Number(row.latest_epoch_ms)
+      ).toISOString();
+    }
   }
 
   return {

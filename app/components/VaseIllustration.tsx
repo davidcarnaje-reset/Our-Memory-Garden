@@ -6,11 +6,11 @@ import {
   getVaseByCode,
   type VaseCatalogItem,
   type VasePattern,
+  type VaseShape,
 } from "@/src/lib/vaseCatalog";
 
-type VaseShape = "classic" | "amphora" | "chalice" | "faceted" | "lantern";
-
 function getVaseShape(vase: Partial<VaseCatalogItem>): VaseShape {
+  if (vase.shape) return vase.shape;
   const code = vase.code ?? "";
   if (vase.pattern === "crystal" || vase.pattern === "stained") {
     return "faceted";
@@ -448,6 +448,49 @@ function renderVasePattern(pattern: VasePattern, accent: string) {
           <circle cx="90" cy="168" r="3" fill={accent} />
         </g>
       );
+    case "hearts":
+      return (
+        <g fill={accent} opacity="0.9">
+          {[
+            { x: 74, y: 158, s: 0.9 },
+            { x: 103, y: 155, s: 0.8 },
+            { x: 89, y: 174, s: 1.05 },
+          ].map((h, i) => (
+            <path
+              key={i}
+              transform={`translate(${h.x}, ${h.y}) scale(${h.s})`}
+              d="M 0,5 C -6,0 -9,-4 -5,-7 C -2,-9 0,-6 0,-4 C 0,-6 2,-9 5,-7 C 9,-4 6,0 0,5 Z"
+            />
+          ))}
+        </g>
+      );
+    case "diamonds":
+      return (
+        <g fill="none" stroke={accent} strokeWidth="1.8" opacity="0.85">
+          {[68, 90, 112].map((cx) => (
+            <polygon
+              key={cx}
+              points={`${cx},155 ${cx + 7},165 ${cx},175 ${cx - 7},165`}
+            />
+          ))}
+        </g>
+      );
+    case "wavy_stripes":
+      return (
+        <g fill="none" stroke={accent} strokeWidth="2.4" strokeLinecap="round" opacity="0.85">
+          <path d="M 75,138 Q 68,158 76,176 Q 80,185 74,193" />
+          <path d="M 90,138 Q 97,158 89,176 Q 85,185 91,193" />
+          <path d="M 105,138 Q 98,158 106,176 Q 110,185 104,193" />
+        </g>
+      );
+    case "twotone":
+      return (
+        <path
+          d="M 55,172 Q 90,164 125,172 L 118,188 Q 90,196 62,188 Z"
+          fill={accent}
+          opacity="0.92"
+        />
+      );
     case "band":
     default:
       return (
@@ -507,14 +550,24 @@ export default function VaseIllustration({
           ? "M 66,134 L 50,158 L 58,188 L 76,195 L 104,195 L 122,188 L 130,158 L 114,134 Z"
           : shape === "lantern"
             ? "M 66,134 L 54,150 L 54,184 L 68,195 L 112,195 L 126,184 L 126,150 L 114,134 Z"
-            : "M 64,134 C 60,144 48,154 50,174 C 52,188 64,195 90,195 C 116,195 128,188 130,174 C 132,154 120,144 116,134 Z";
+            : shape === "slender"
+              ? "M 73,134 C 74,148 68,166 64,184 C 63,191 74,195 90,195 C 106,195 117,191 116,184 C 112,166 106,148 107,134 Z"
+              : shape === "trumpet"
+                ? "M 56,134 L 68,188 C 70,193 78,195 90,195 C 102,195 110,193 112,188 L 124,134 Z"
+                : shape === "hourglass"
+                  ? "M 62,134 C 68,144 68,148 56,162 C 48,172 56,188 70,195 L 110,195 C 124,188 132,172 124,162 C 112,148 112,144 118,134 Z"
+                  : "M 64,134 C 60,144 48,154 50,174 C 52,188 64,195 90,195 C 116,195 128,188 130,174 C 132,154 120,144 116,134 Z";
 
   const shadePath =
     shape === "faceted"
       ? "M 92,134 L 108,158 L 100,195 L 104,195 L 122,188 L 130,158 L 114,134 Z"
       : shape === "chalice"
         ? "M 96,134 C 102,152 98,170 92,178 L 104,188 L 118,194 L 102,194 L 104,188 L 102,178 C 116,170 122,150 118,134 Z"
-        : "M 96,134 C 102,146 112,156 110,175 C 108,186 100,193 90,195 C 116,195 128,188 130,174 C 132,154 120,144 116,134 Z";
+        : shape === "slender"
+          ? "M 96,134 C 98,152 104,168 106,185 C 106,191 100,194 90,195 C 106,195 117,191 116,184 C 112,166 106,148 107,134 Z"
+          : shape === "trumpet"
+            ? "M 94,134 L 102,194 C 107,193 111,191 112,188 L 124,134 Z"
+            : "M 96,134 C 102,146 112,156 110,175 C 108,186 100,193 90,195 C 116,195 128,188 130,174 C 132,154 120,144 116,134 Z";
   const stems = buildBouquetSpecs(resolvedItems, monthIndex);
   const swayDelay = `${(monthIndex % 5) * 0.55}s`;
 

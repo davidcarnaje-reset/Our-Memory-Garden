@@ -21,7 +21,21 @@ export type VasePattern =
   | "aurora"
   | "kintsugi"
   | "marble"
-  | "royal";
+  | "royal"
+  | "hearts"
+  | "diamonds"
+  | "wavy_stripes"
+  | "twotone";
+
+export type VaseShape =
+  | "classic"
+  | "amphora"
+  | "chalice"
+  | "faceted"
+  | "lantern"
+  | "slender"
+  | "trumpet"
+  | "hourglass";
 
 export interface VaseCatalogItem {
   code: string;
@@ -36,11 +50,27 @@ export interface VaseCatalogItem {
   highlight: string;
   accent: string;
   pattern: VasePattern;
+  shape?: VaseShape;
   isGlass?: boolean;
   glowColor?: string;
 }
 
 export const SHARD_COST = 5;
+
+export function getVaseShardCost(rarity: VaseRarity): number {
+  switch (rarity) {
+    case "Common":
+      return 2;
+    case "Uncommon":
+      return 3;
+    case "Rare":
+      return 4;
+    case "Epic":
+    case "Mythic":
+    default:
+      return 5;
+  }
+}
 
 export const STARTER_VASE: VaseCatalogItem = {
   code: "starter_classic",
@@ -807,6 +837,99 @@ export const SPECIAL_VASES: VaseCatalogItem[] = [
     accent: "#E8C362",
     pattern: "kintsugi",
     glowColor: "#9EC2B0",
+  },
+
+  // 6. Romantic Hearts & Artistic Silhouettes (6 new additions)
+  {
+    code: "art_sweetheart_blossom",
+    name: "Sweetheart Blossom",
+    theme: "Artisan & Hand-Painted",
+    rarity: "Uncommon",
+    description: "Warm rose-pink hourglass vase sprinkled with floating hearts.",
+    body: "#F4A4B4",
+    gradientTo: "#DE7A90",
+    shade: "#BA5A70",
+    rim: "#FBCAD4",
+    highlight: "#FFF0F3",
+    accent: "#FFE4EB",
+    pattern: "hearts",
+    shape: "hourglass",
+  },
+  {
+    code: "cel_cupid_glow",
+    name: "Cupid's Glowing Heart",
+    theme: "Celestial & Enchanted",
+    rarity: "Epic",
+    description: "Luminous rose-violet amphora glowing with golden love hearts.",
+    body: "#B86B9B",
+    gradientTo: "#7A3D6A",
+    shade: "#56254A",
+    rim: "#F4B8D4",
+    highlight: "#FFE6F2",
+    accent: "#FCE39A",
+    pattern: "hearts",
+    shape: "amphora",
+    glowColor: "#F299C2",
+  },
+  {
+    code: "bot_two_tone_clay",
+    name: "Two-Tone Terracotta",
+    theme: "Botanical & Pastel Ceramics",
+    rarity: "Common",
+    description: "Hand-dipped sienna & pearl-white hourglass ceramic.",
+    body: "#B85D2A",
+    gradientTo: "#96461B",
+    shade: "#753310",
+    rim: "#C97240",
+    highlight: "#F2CFC0",
+    accent: "#EAE5DF",
+    pattern: "twotone",
+    shape: "hourglass",
+  },
+  {
+    code: "art_sunny_ribbon",
+    name: "Sunny Ribbon",
+    theme: "Artisan & Hand-Painted",
+    rarity: "Common",
+    description: "Slender sunlit-yellow vase painted with sky-blue wavy ribbons.",
+    body: "#F7DF6E",
+    gradientTo: "#E3C242",
+    shade: "#C4A327",
+    rim: "#FCECA3",
+    highlight: "#FFFBE0",
+    accent: "#6BB8E8",
+    pattern: "wavy_stripes",
+    shape: "slender",
+  },
+  {
+    code: "art_crimson_diamond",
+    name: "Crimson Diamond Urn",
+    theme: "Artisan & Hand-Painted",
+    rarity: "Rare",
+    description: "Vibrant ruby ceramic adorned with golden diamond latticework.",
+    body: "#D92B3A",
+    gradientTo: "#A81926",
+    shade: "#7D0E18",
+    rim: "#F5C445",
+    highlight: "#FF9CA4",
+    accent: "#F7CE5B",
+    pattern: "diamonds",
+    shape: "classic",
+  },
+  {
+    code: "bot_meadow_trumpet",
+    name: "Meadow Trumpet",
+    theme: "Botanical & Pastel Ceramics",
+    rarity: "Common",
+    description: "Flared forest-sage trumpet vase patterned with tiny blossoms.",
+    body: "#6D9644",
+    gradientTo: "#4E732B",
+    shade: "#38571B",
+    rim: "#88B55B",
+    highlight: "#D4EBBC",
+    accent: "#DDF2C7",
+    pattern: "floral",
+    shape: "trumpet",
   },
 ];
 

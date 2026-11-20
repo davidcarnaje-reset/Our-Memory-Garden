@@ -47,6 +47,7 @@ export interface UploadImageParams {
   mimeType: string;
   fileName: string;
   memoryDate?: string; // YYYY-MM-DD
+  subfolderName?: string; // e.g. "Daily Pictures"
 }
 
 async function findOrCreateFolder(
@@ -99,6 +100,7 @@ export async function uploadImageToDrive({
   mimeType,
   fileName,
   memoryDate,
+  subfolderName,
 }: UploadImageParams): Promise<string> {
   const rootFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
   if (!rootFolderId) {
@@ -108,7 +110,9 @@ export async function uploadImageToDrive({
   const drive = getDriveClient();
 
   let targetFolderId = rootFolderId;
-  if (memoryDate && /^\d{4}-\d{2}-\d{2}$/.test(memoryDate)) {
+  if (subfolderName) {
+    targetFolderId = await findOrCreateFolder(drive, rootFolderId, subfolderName);
+  } else if (memoryDate && /^\d{4}-\d{2}-\d{2}$/.test(memoryDate)) {
     const year = memoryDate.slice(0, 4);
     const monthIndex = Number(memoryDate.slice(5, 7)) - 1;
     const monthName = MONTH_NAMES[monthIndex];

@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const image = formData.get("image");
     const memoryDate = formData.get("memory_date");
+    const folder = formData.get("folder");
 
     if (!(image instanceof File) || image.size === 0) {
       return NextResponse.json(
@@ -24,6 +25,8 @@ export async function POST(request: NextRequest) {
       typeof memoryDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(memoryDate)
         ? memoryDate
         : undefined;
+
+    const subfolderName = folder === "daily" ? "Daily Pictures" : undefined;
 
     const arrayBuffer = await image.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
@@ -38,6 +41,7 @@ export async function POST(request: NextRequest) {
       mimeType: image.type || "image/jpeg",
       fileName: safeFileName,
       memoryDate: validDate,
+      subfolderName,
     });
 
     return NextResponse.json({ fileId }, { status: 201 });

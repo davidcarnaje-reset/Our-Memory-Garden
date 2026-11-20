@@ -1,33 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
-import { RowDataPacket } from "mysql2/promise";
+import { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 import { getAuthenticatedSession } from "@/src/lib/auth";
 import {
+  DailyWaterPhotoRow,
   ensureMemoriesTable,
   GardenStatsRow,
   getDbPool,
   WateringLogRow,
 } from "@/src/lib/db";
+import { getManilaCycleDates } from "@/src/lib/manilaTime";
 
 interface PartnerLatestRow extends RowDataPacket {
   watered_by: string;
-  latest_at: string;
-}
-
-function getManilaDates(): { today: string; yesterday: string } {
-  const now = new Date();
-  const fmt = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Manila",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const today = fmt.format(now);
-
-  const [y, m, d] = today.split("-").map(Number);
-  const yesterdayUtc = new Date(Date.UTC(y, m - 1, d - 1));
-  const yesterday = yesterdayUtc.toISOString().slice(0, 10);
-
-  return { today, yesterday };
+  latest_epoch_ms: number;
 }
 
 export async function POST(request: NextRequest) {
@@ -37,19 +22,54 @@ export async function POST(request: NextRequest) {
   }
 
   let currentUser = session.uploadedBy;
+  let driveFileIds: string[] = [];
+  let caption: string | null = null;
+
   try {
     const body = await request.json();
     if (typeof body?.wateredBy === "string" && body.wateredBy.trim()) {
       currentUser = body.wateredBy.trim().slice(0, 50);
     }
+    if (Array.isArray(body?.drive_file_ids)) {
+      driveFileIds = body.drive_file_ids
+        .filter((x: unknown): x is string => typeof x === "string" && x.trim().length > 0)
+        .slice(0, 3);
+    }
+    if (typeof body?.caption === "string" && body.caption.trim()) {
+      caption = body.caption.trim().slice(0, 255);
+    }
   } catch {
-    // Optional body
+    return NextResponse.json(
+      { error: "Please take or upload 1 to 3 photos to water the garden." },
+      { status: 400 }
+    );
+  }
+
+  if (driveFileIds.length === 0) {
+    return NextResponse.json(
+      { error: "Please take or upload 1 to 3 photos to water the garden." },
+      { status: 400 }
+    );
   }
 
   try {
     await ensureMemoriesTable();
     const pool = getDbPool();
-    const { today, yesterday } = getManilaDates();
+    const { today, yesterday } = getManilaCycleDates();
+
+    // Save the daily photo check-in (archived in Drive's "Daily Pictures", shown for today's cycle only)
+    const [insertPhotoRes] = await pool.execute<ResultSetHeader>(
+      `INSERT INTO daily_water_photos (cycle_key, uploaded_by, caption, drive_file_ids)
+       VALUES (?, ?, ?, ?)`,
+      [today, currentUser, caption, JSON.stringify(driveFileIds)]
+    );
+
+    const [dailyRows] = await pool.execute<DailyWaterPhotoRow[]>(
+      `SELECT id, cycle_key, uploaded_by, caption, drive_file_ids, created_at
+       FROM daily_water_photos
+       WHERE id = ?`,
+      [insertPhotoRes.insertId]
+    );
 
     const [statsRows] = await pool.execute<GardenStatsRow[]>(
       `SELECT id, current_streak, longest_streak, last_watered_date, last_watered_by, partner_watered_today, vase_shards
@@ -125,20 +145,36 @@ export async function POST(request: NextRequest) {
       `SELECT id, watered_by, watered_at FROM garden_watering ORDER BY id DESC LIMIT 1`
     );
     const [partnerRows] = await pool.execute<PartnerLatestRow[]>(
-      `SELECT watered_by, MAX(watered_at) AS latest_at FROM garden_watering GROUP BY watered_by`
+      `SELECT watered_by, UNIX_TIMESTAMP(MAX(watered_at)) * 1000 AS latest_epoch_ms FROM garden_watering GROUP BY watered_by`
     );
 
     const latestByPartner: Record<string, string> = {};
     for (const row of partnerRows) {
-      latestByPartner[row.watered_by] = row.latest_at;
+      if (row.latest_epoch_ms) {
+        latestByPartner[row.watered_by] = new Date(
+          Number(row.latest_epoch_ms)
+        ).toISOString();
+      }
     }
+
+    const rawDaily = dailyRows[0];
+    const dailyEntry = rawDaily
+      ? {
+          id: rawDaily.id,
+          cycle_key: rawDaily.cycle_key,
+          uploaded_by: rawDaily.uploaded_by,
+          caption: rawDaily.caption,
+          drive_file_ids: driveFileIds,
+          created_at: rawDaily.created_at,
+        }
+      : null;
 
     return NextResponse.json({
       stats: {
         id: 1,
         current_streak: currentStreak,
         longest_streak: longestStreak,
-        last_watered_date: lastWateredDate === today ? today : today,
+        last_watered_date: today,
         last_watered_by: lastWateredBy,
         partner_watered_today: partnerWateredToday,
         vase_shards: vaseShards,
@@ -148,6 +184,7 @@ export async function POST(request: NextRequest) {
       milestoneReached,
       latest: latestRows[0] ?? null,
       latestByPartner,
+      dailyEntry,
     });
   } catch (error) {
     console.error("POST /api/garden/water error:", error);

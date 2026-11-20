@@ -2,9 +2,13 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Bell,
+  BellRing,
   Calendar,
+  Camera,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Droplets,
   Flame,
   Flower2,
@@ -23,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import type {
+  DailyWaterEntry,
   GardenPlacement,
   GardenStats,
   Memory,
@@ -30,6 +35,8 @@ import type {
   WateringLog,
 } from "@/src/lib/db";
 import { SPECIAL_VASES, STARTER_VASE } from "@/src/lib/vaseCatalog";
+import DailyGardenTab from "./DailyGardenTab";
+import DailyWaterModal, { type DailyWaterResult } from "./DailyWaterModal";
 import GardenPlace, { type GardenTheme } from "./GardenPlace";
 import MemoryPhotoCarousel from "./MemoryPhotoCarousel";
 import MonthVasePickerModal from "./MonthVasePickerModal";
@@ -91,10 +98,48 @@ function parseWateredMs(wateredAt: string | undefined): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-function isWateredWithin24h(wateredAt: string | undefined, nowMs: number): boolean {
+function getManilaCycleKey(ms: number): string {
+  // Garden day resets at 6:00 PM Asia/Manila
+  const shifted = new Date(ms - 18 * 60 * 60 * 1000);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Manila",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(shifted);
+}
+
+function getMsUntilNext6PmPht(nowMs: number): number {
+  const phtOffsetMs = 8 * 60 * 60 * 1000;
+  const phtNow = new Date(nowMs + phtOffsetMs);
+  const target = new Date(phtNow.getTime());
+  target.setUTCHours(18, 0, 0, 0);
+  if (phtNow.getTime() >= target.getTime()) {
+    target.setUTCDate(target.getUTCDate() + 1);
+  }
+  return Math.max(0, target.getTime() - phtNow.getTime());
+}
+
+function formatCountdown(ms: number): string {
+  const totalMins = Math.max(0, Math.floor(ms / 60000));
+  const hours = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  if (hours === 0) return `${mins}m`;
+  return `${hours}h ${mins}m`;
+}
+
+function isWateredInCurrentCycle(
+  wateredAt: string | undefined,
+  nowMs: number
+): boolean {
   const ms = parseWateredMs(wateredAt);
   if (ms === null) return false;
-  return nowMs - ms < 1000 * 60 * 60 * 24;
+  return getManilaCycleKey(ms) === getManilaCycleKey(nowMs);
+}
+
+function cycleIndexFromKey(cycleKey: string): number {
+  const [y, m, d] = cycleKey.split("-").map(Number);
+  return Math.floor(Date.UTC(y, m - 1, d) / (1000 * 60 * 60 * 24));
 }
 
 function computeSharedPlantHealth(
@@ -106,17 +151,17 @@ function computeSharedPlantHealth(
     .map((name) => parseWateredMs(latestByPartner[name]))
     .filter((ms): ms is number => ms !== null);
 
-  // Brand-new garden before anyone has watered yet
   if (timestamps.length === 0) return "fresh";
 
-  // If both partners have watered at least once, track from the more overdue partner;
-  // if only one has watered so far, track from the earliest watering so the other has 1 day to join.
-  const oldestMs = Math.min(...timestamps);
-  const diffDays = (nowMs - oldestMs) / (1000 * 60 * 60 * 24);
+  const currentCycleIdx = cycleIndexFromKey(getManilaCycleKey(nowMs));
+  const oldestCycleIdx = Math.min(
+    ...timestamps.map((ms) => cycleIndexFromKey(getManilaCycleKey(ms)))
+  );
+  const missedCycles = Math.max(0, currentCycleIdx - oldestCycleIdx);
 
-  if (diffDays >= 3) return "withered";
-  if (diffDays >= 2) return "wilting";
-  if (diffDays >= 1) return "thirsty";
+  if (missedCycles >= 3) return "withered";
+  if (missedCycles >= 2) return "wilting";
+  if (missedCycles >= 1) return "thirsty";
   return "fresh";
 }
 
@@ -137,6 +182,7 @@ export default function MemoryGardenApp({
 
   const [year, setYear] = useState<number>(defaultYear);
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
   const [isLoadingMemories, setIsLoadingMemories] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -149,7 +195,6 @@ export default function MemoryGardenApp({
   const [latestByPartner, setLatestByPartner] = useState<
     Record<string, string>
   >({});
-  const [isWatering, setIsWatering] = useState(false);
   const [waterSparkleActive, setWaterSparkleActive] = useState(false);
   const [nowMs, setNowMs] = useState<number>(0);
 
@@ -166,9 +211,14 @@ export default function MemoryGardenApp({
 
   const isNight = ambienceMode === "auto" ? autoIsNight : ambienceMode === "night";
 
-  // View Mode: Monthly Shelf vs Garden Place
-  const [viewMode, setViewMode] = useState<"shelf" | "garden">("shelf");
+  // View Mode: Monthly Shelf vs Garden Place vs Daily Garden
+  const [viewMode, setViewMode] = useState<"shelf" | "garden" | "daily">(
+    "shelf"
+  );
   const [placements, setPlacements] = useState<GardenPlacement[]>([]);
+  const [dailyCycleKey, setDailyCycleKey] = useState<string>("");
+  const [dailyEntries, setDailyEntries] = useState<DailyWaterEntry[]>([]);
+  const [isWaterModalOpen, setIsWaterModalOpen] = useState(false);
 
   // Gamified Streak & Vase Boutique State
   const [gardenStats, setGardenStats] = useState<GardenStats>({
@@ -181,12 +231,28 @@ export default function MemoryGardenApp({
     vase_shards: 0,
   });
   const [unlockedVases, setUnlockedVases] = useState<string[]>([]);
+  const [unlockedSceneries, setUnlockedSceneries] = useState<string[]>([]);
   const [equippedVases, setEquippedVases] = useState<Record<string, string>>(
     {}
   );
   const [isBoutiqueOpen, setIsBoutiqueOpen] = useState(false);
   const [customizingMonthIndex, setCustomizingMonthIndex] = useState<
     number | null
+  >(null);
+  const [notifEnabled, setNotifEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return (
+        "Notification" in window &&
+        Notification.permission === "granted" &&
+        localStorage.getItem("memory_garden_notif") === "on"
+      );
+    } catch {
+      return false;
+    }
+  });
+  const [dismissedReminderCycle, setDismissedReminderCycle] = useState<
+    string | null
   >(null);
   const [gardenToast, setGardenToast] = useState<{
     title: string;
@@ -197,7 +263,15 @@ export default function MemoryGardenApp({
     if (typeof window === "undefined") return "peaceful";
     try {
       const saved = localStorage.getItem("memory_garden_theme");
-      if (saved === "peaceful" || saved === "fantasy" || saved === "wonderful") {
+      if (
+        saved === "peaceful" ||
+        saved === "fantasy" ||
+        saved === "wonderful" ||
+        saved === "cherry_blossom" ||
+        saved === "starry_tent" ||
+        saved === "paris_eiffel" ||
+        saved === "lantern_lake"
+      ) {
         return saved;
       }
     } catch {
@@ -206,6 +280,30 @@ export default function MemoryGardenApp({
     return "peaceful";
   });
   const [plantHealth, setPlantHealth] = useState<PlantHealth>("fresh");
+
+  const hasPartnerWateredToday = useCallback(
+    (partner: string): boolean => {
+      if (
+        dailyEntries.some(
+          (e) => e.uploaded_by.toLowerCase() === partner.toLowerCase()
+        )
+      ) {
+        return true;
+      }
+      if (nowMs > 0) {
+        const currentCycle = getManilaCycleKey(nowMs);
+        if (
+          gardenStats.last_watered_date === currentCycle &&
+          gardenStats.last_watered_by?.toLowerCase() === partner.toLowerCase()
+        ) {
+          return true;
+        }
+        return isWateredInCurrentCycle(latestByPartner[partner], nowMs);
+      }
+      return false;
+    },
+    [dailyEntries, gardenStats, latestByPartner, nowMs]
+  );
 
   useEffect(() => {
     const updateHealth = () => {
@@ -219,6 +317,42 @@ export default function MemoryGardenApp({
     const interval = setInterval(updateHealth, 60_000);
     return () => clearInterval(interval);
   }, [latestByPartner, partnerOptions]);
+
+  // Browser notification at 6:00 PM PHT reset & when current cycle still needs watering
+  useEffect(() => {
+    if (!isAuthenticated || !notifEnabled || nowMs === 0) return;
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+
+    const currentCycle = getManilaCycleKey(nowMs);
+    const userWatered = hasPartnerWateredToday(uploadedBy);
+
+    if (!userWatered) {
+      const lastNotifiedCycle = localStorage.getItem(
+        "memory_garden_last_notif_cycle"
+      );
+      if (lastNotifiedCycle !== currentCycle) {
+        new Notification("Our Memory Garden needs water! 🚿", {
+          body: `Hi ${uploadedBy}! Water your plants today before 6:00 PM PHT so they stay blooming.`,
+          icon: "/icon.svg",
+        });
+        localStorage.setItem("memory_garden_last_notif_cycle", currentCycle);
+      }
+    }
+
+    const msToReset = getMsUntilNext6PmPht(nowMs);
+    const resetTimer = setTimeout(() => {
+      const nextCycle = getManilaCycleKey(Date.now() + 2000);
+      new Notification("6:00 PM PHT — Garden Watering Reset! 🌸", {
+        body: `It's 6:00 PM! Time for ${uploadedBy} to water Our Memory Garden.`,
+        icon: "/icon.svg",
+      });
+      localStorage.setItem("memory_garden_last_notif_cycle", nextCycle);
+      setNowMs(Date.now());
+    }, msToReset + 1500);
+
+    return () => clearTimeout(resetTimer);
+  }, [isAuthenticated, notifEnabled, nowMs, hasPartnerWateredToday, uploadedBy]);
 
   // Random Memory Spotlight
   const [spotlightMemory, setSpotlightMemory] = useState<Memory | null>(null);
@@ -283,12 +417,14 @@ export default function MemoryGardenApp({
     let cancelled = false;
     async function load() {
       try {
-        const [memRes, waterRes, gardenRes, statusRes] = await Promise.all([
-          fetch(`/api/memories?year=${year}`, { cache: "no-store" }),
-          fetch("/api/water", { cache: "no-store" }),
-          fetch(`/api/garden?year=${year}`, { cache: "no-store" }),
-          fetch(`/api/garden/status?year=${year}`, { cache: "no-store" }),
-        ]);
+        const [memRes, waterRes, gardenRes, statusRes, dailyRes] =
+          await Promise.all([
+            fetch(`/api/memories?year=${year}`, { cache: "no-store" }),
+            fetch("/api/water", { cache: "no-store" }),
+            fetch(`/api/garden?year=${year}`, { cache: "no-store" }),
+            fetch(`/api/garden/status?year=${year}`, { cache: "no-store" }),
+            fetch("/api/garden/daily", { cache: "no-store" }),
+          ]);
         if (cancelled) return;
         if (memRes.status === 401) {
           setIsAuthenticated(false);
@@ -325,8 +461,19 @@ export default function MemoryGardenApp({
           if (Array.isArray(statusData.unlockedVases)) {
             setUnlockedVases(statusData.unlockedVases);
           }
+          if (Array.isArray(statusData.unlockedSceneries)) {
+            setUnlockedSceneries(statusData.unlockedSceneries);
+          }
           if (statusData.equippedVases) {
             setEquippedVases(statusData.equippedVases);
+          }
+        }
+
+        if (dailyRes.ok) {
+          const dailyData = await dailyRes.json();
+          if (dailyData.cycleKey) setDailyCycleKey(dailyData.cycleKey);
+          if (Array.isArray(dailyData.entries)) {
+            setDailyEntries(dailyData.entries);
           }
         }
       } catch {
@@ -336,6 +483,7 @@ export default function MemoryGardenApp({
       } finally {
         if (!cancelled) {
           setIsLoadingMemories(false);
+          setHasLoadedInitialData(true);
         }
       }
     }
@@ -356,49 +504,78 @@ export default function MemoryGardenApp({
     return grouped;
   }, [memories]);
 
-  async function handleWaterGarden() {
-    if (isWatering) return;
-    setIsWatering(true);
-    setWaterSparkleActive(true);
-    try {
-      const res = await fetch("/api/garden/water", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wateredBy: uploadedBy }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        if (data.latest) setWateringLog(data.latest);
-        if (data.latestByPartner) setLatestByPartner(data.latestByPartner);
-        if (data.stats) setGardenStats(data.stats);
+  function handleWaterGarden() {
+    setIsWaterModalOpen(true);
+  }
 
-        if (data.milestoneReached) {
-          setGardenToast({
-            title: `${data.stats.current_streak}-Day Streak! +5 Vase Shards earned!`,
-            subtitle: "Celebrate in the Vase Boutique to unlock a special vase!",
-            isMilestone: true,
-          });
-          setTimeout(() => setGardenToast(null), 5500);
-        } else if (data.coopBonusAwarded) {
-          setGardenToast({
-            title: "Co-op Bonus! +1 Vase Shard earned!",
-            subtitle: "You both watered the garden together today.",
-          });
-          setTimeout(() => setGardenToast(null), 4000);
-        } else if (data.alreadyWatered) {
-          setGardenToast({
-            title: "Already watered today",
-            subtitle:
-              data.stats?.partner_watered_today
-                ? "Both of you have watered the garden today!"
-                : "Wait for your partner to water today for a +1 Co-op Shard!",
-          });
-          setTimeout(() => setGardenToast(null), 3500);
-        }
-      }
-    } finally {
-      setIsWatering(false);
-      setTimeout(() => setWaterSparkleActive(false), 2600);
+  function handleDailyWaterSuccess(data: DailyWaterResult) {
+    setWaterSparkleActive(true);
+    setTimeout(() => setWaterSparkleActive(false), 2600);
+
+    if (data.latest) setWateringLog(data.latest);
+    if (data.latestByPartner) setLatestByPartner(data.latestByPartner);
+    if (data.stats) setGardenStats(data.stats);
+    if (data.dailyEntry) {
+      setDailyEntries((prev) => [...prev, data.dailyEntry!]);
+    }
+
+    if (data.milestoneReached && data.stats) {
+      setGardenToast({
+        title: `${data.stats.current_streak}-Day Streak! +5 Vase Shards earned!`,
+        subtitle: "Celebrate in the Vase Boutique to unlock a special vase!",
+        isMilestone: true,
+      });
+      setTimeout(() => setGardenToast(null), 5500);
+    } else if (data.coopBonusAwarded) {
+      setGardenToast({
+        title: "Co-op Bonus! +1 Vase Shard earned!",
+        subtitle: "You both watered the garden together today.",
+      });
+      setTimeout(() => setGardenToast(null), 4000);
+    } else if (data.alreadyWatered) {
+      setGardenToast({
+        title: "Daily photo shared & saved!",
+        subtitle: "Your photo is blooming in today's Daily Garden vase.",
+      });
+      setTimeout(() => setGardenToast(null), 3500);
+    }
+  }
+
+  async function handleToggleNotifications() {
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setGardenToast({
+        title: "Notifications not supported",
+        subtitle: "Your current browser does not support desktop notifications.",
+      });
+      setTimeout(() => setGardenToast(null), 3500);
+      return;
+    }
+
+    if (notifEnabled) {
+      setNotifEnabled(false);
+      localStorage.setItem("memory_garden_notif", "off");
+      return;
+    }
+
+    const permission =
+      Notification.permission === "granted"
+        ? "granted"
+        : await Notification.requestPermission();
+
+    if (permission === "granted") {
+      setNotifEnabled(true);
+      localStorage.setItem("memory_garden_notif", "on");
+      setGardenToast({
+        title: "6:00 PM PHT Reminders Enabled! 🔔",
+        subtitle: "We'll notify you when your garden needs watering.",
+      });
+      setTimeout(() => setGardenToast(null), 3500);
+    } else {
+      setGardenToast({
+        title: "Notification permission blocked",
+        subtitle: "Allow notifications in your browser settings to get 6 PM reminders.",
+      });
+      setTimeout(() => setGardenToast(null), 4000);
     }
   }
 
@@ -416,6 +593,26 @@ export default function MemoryGardenApp({
     if (data.unlockedCode) {
       setUnlockedVases((prev) =>
         prev.includes(data.unlockedCode) ? prev : [...prev, data.unlockedCode]
+      );
+    }
+  }
+
+  async function handleUnlockScenery(sceneryCode: string) {
+    const res = await fetch("/api/garden/unlock-scenery", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scenery_code: sceneryCode }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error ?? "Failed to unlock scenery.");
+    }
+    if (data.stats) setGardenStats(data.stats);
+    if (data.unlockedScenery) {
+      setUnlockedSceneries((prev) =>
+        prev.includes(data.unlockedScenery)
+          ? prev
+          : [...prev, data.unlockedScenery]
       );
     }
   }
@@ -470,6 +667,7 @@ export default function MemoryGardenApp({
       // Ignore
     }
     setIsAuthenticated(false);
+    setHasLoadedInitialData(false);
     setMemories([]);
     setSelectedMonthIndex(null);
     setSpotlightMemory(null);
@@ -578,9 +776,30 @@ export default function MemoryGardenApp({
         partnerOptions={partnerOptions}
         onSuccess={(partner) => {
           setUploadedBy(partner);
+          setHasLoadedInitialData(false);
           setIsAuthenticated(true);
         }}
       />
+    );
+  }
+
+  if (!hasLoadedInitialData) {
+    return (
+      <div
+        className={`min-h-screen flex flex-col items-center justify-center gap-3 px-4 transition-colors ${
+          isNight
+            ? "bg-[#1A201D] text-[#D8D0C5]"
+            : "bg-[#FAF6F0] text-[#7A685D]"
+        }`}
+      >
+        <div className="w-12 h-12 rounded-2xl bg-[#E4EDE4] border border-[#C9DBC9] flex items-center justify-center text-[#5B7A5F] animate-pulse">
+          <Flower2 className="w-6 h-6" />
+        </div>
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Loader2 className="w-4 h-4 animate-spin text-[#6D8C70]" />
+          <span>Gathering your memories &amp; garden...</span>
+        </div>
+      </div>
     );
   }
 
@@ -788,27 +1007,108 @@ export default function MemoryGardenApp({
             </span>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setIsBoutiqueOpen(true)}
-            className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl border text-xs font-semibold transition cursor-pointer ${
-              isNight
-                ? "bg-[#2A2635] border-[#453E59] text-[#DFCEFA] hover:bg-[#342F42]"
-                : "bg-[#F6F0FC] border-[#DFD2F0] text-[#5F438A] hover:bg-[#ECE2F7]"
-            }`}
-          >
-            <span>🏺 Vase Boutique</span>
-            <span className="px-1.5 py-0.5 rounded-full bg-white/70 text-[#4B346E] text-[10px]">
-              {unlockedVases.length}/{SPECIAL_VASES.length}
-            </span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleToggleNotifications}
+              title={
+                notifEnabled
+                  ? "6:00 PM PHT reminders enabled (click to turn off)"
+                  : "Enable 6:00 PM PHT watering reminders"
+              }
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border text-xs font-semibold transition cursor-pointer ${
+                notifEnabled
+                  ? isNight
+                    ? "bg-[#26382B] border-[#3A5942] text-[#A4D4AC]"
+                    : "bg-[#E4EDE4] border-[#C6DBC7] text-[#426346]"
+                  : isNight
+                    ? "bg-[#232B27] border-[#35403A] text-[#B5ACA0] hover:text-white"
+                    : "bg-[#FFFCF7] border-[#E4D9CB] text-[#6E5C51] hover:bg-[#F2E9DC]"
+              }`}
+            >
+              {notifEnabled ? (
+                <BellRing className="w-3.5 h-3.5" />
+              ) : (
+                <Bell className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden sm:inline">
+                {notifEnabled ? "Reminders On" : "Notify Me"}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsBoutiqueOpen(true)}
+              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl border text-xs font-semibold transition cursor-pointer ${
+                isNight
+                  ? "bg-[#2A2635] border-[#453E59] text-[#DFCEFA] hover:bg-[#342F42]"
+                  : "bg-[#F6F0FC] border-[#DFD2F0] text-[#5F438A] hover:bg-[#ECE2F7]"
+              }`}
+            >
+              <span>🏺 Vase Boutique</span>
+              <span className="px-1.5 py-0.5 rounded-full bg-white/70 text-[#4B346E] text-[10px]">
+                {unlockedVases.length}/{SPECIAL_VASES.length}
+              </span>
+            </button>
+          </div>
         </div>
+
+        {/* In-App Daily Watering Reminder Banner */}
+        {nowMs > 0 &&
+          !hasPartnerWateredToday(uploadedBy) &&
+          dismissedReminderCycle !== getManilaCycleKey(nowMs) && (
+            <div
+              className={`rounded-2xl border px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs ${
+                plantHealth === "withered"
+                  ? "bg-[#FDF0EE] border-[#F0C8C2] text-[#9E3E33]"
+                  : isNight
+                    ? "bg-[#243028] border-[#36493C] text-[#D7E8DA]"
+                    : "bg-[#EEF6FB] border-[#CBE0EE] text-[#2F5E82]"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <BellRing className="w-4 h-4 shrink-0" />
+                <span>
+                  {plantHealth === "withered" ? (
+                    <>
+                      <strong>Your plants withered!</strong> Water now to bring
+                      back their colors.
+                    </>
+                  ) : (
+                    <>
+                      Hi <strong>{uploadedBy}</strong>, your garden still needs
+                      watering today (resets at <strong>6:00 PM PHT</strong>).
+                    </>
+                  )}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 ml-auto">
+              <button
+                type="button"
+                onClick={handleWaterGarden}
+                className="px-3 py-1 rounded-xl bg-[#4E89B5] hover:bg-[#3F78A3] text-white font-semibold transition cursor-pointer"
+              >
+                Water Now 💧
+              </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDismissedReminderCycle(getManilaCycleKey(nowMs))
+                  }
+                  aria-label="Dismiss watering reminder"
+                  className="p-1 rounded-lg hover:bg-black/5 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
 
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-          {/* Monthly Shelf / Garden Place Toggle */}
+          {/* Monthly Shelf / Garden Place / Daily Garden Toggle */}
           <div
-            className={`inline-flex items-center p-1 rounded-2xl border ${
+            className={`inline-flex flex-wrap items-center p-1 rounded-2xl border ${
               isNight
                 ? "bg-[#232B27] border-[#35403A]"
                 : "bg-[#FFFCF7] border-[#E4D9CB]"
@@ -817,7 +1117,7 @@ export default function MemoryGardenApp({
             <button
               type="button"
               onClick={() => setViewMode("shelf")}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                 viewMode === "shelf"
                   ? "bg-[#6D8C70] text-white shadow-xs"
                   : isNight
@@ -831,7 +1131,7 @@ export default function MemoryGardenApp({
             <button
               type="button"
               onClick={() => setViewMode("garden")}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
                 viewMode === "garden"
                   ? "bg-[#6D8C70] text-white shadow-xs"
                   : isNight
@@ -842,12 +1142,30 @@ export default function MemoryGardenApp({
               <Trees className="w-3.5 h-3.5" />
               <span>Garden Place</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode("daily")}
+              className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                viewMode === "daily"
+                  ? "bg-[#4E89B5] text-white shadow-xs"
+                  : isNight
+                    ? "text-[#B5ACA0] hover:text-white"
+                    : "text-[#6E5C51] hover:text-[#3F322B]"
+              }`}
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span>Daily Garden</span>
+              {dailyEntries.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-white/25 text-[10px]">
+                  {dailyEntries.length}
+                </span>
+              )}
+            </button>
           </div>
 
           <button
             type="button"
             onClick={handleWaterGarden}
-            disabled={isWatering}
             className={`inline-flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-2 rounded-2xl text-xs sm:text-sm font-medium border shadow-xs transition cursor-pointer ${
               waterSparkleActive
                 ? "bg-[#659EC7] border-[#538AB2] text-white"
@@ -868,17 +1186,16 @@ export default function MemoryGardenApp({
                 ? "Watered!"
                 : plantHealth === "withered"
                   ? "Revive Garden!"
-                  : isWateredWithin24h(latestByPartner[uploadedBy], nowMs)
+                  : hasPartnerWateredToday(uploadedBy)
                     ? "Watered Today ✓"
                     : "Water Garden"}
             </span>
           </button>
 
-          {/* Both-Partner Daily Watering Checklist */}
+          {/* Both-Partner Daily Watering Checklist & 6 PM PHT Reset Countdown */}
           <div className="flex flex-wrap items-center gap-1.5">
             {partnerOptions.map((partner) => {
-              const wateredToday =
-                nowMs > 0 && isWateredWithin24h(latestByPartner[partner], nowMs);
+              const wateredToday = hasPartnerWateredToday(partner);
               return (
                 <span
                   key={partner}
@@ -897,6 +1214,23 @@ export default function MemoryGardenApp({
                 </span>
               );
             })}
+
+            {nowMs > 0 && (
+              <span
+                className={`inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full ${
+                  isNight
+                    ? "bg-[#232B27]/90 text-[#B5ACA0]"
+                    : "bg-[#F2E9DC]/80 text-[#7A685D]"
+                }`}
+                title="Daily watering resets every 6:00 PM Philippine Time"
+              >
+                <Clock className="w-3 h-3" />
+                <span>
+                  6 PM PHT reset in{" "}
+                  {formatCountdown(getMsUntilNext6PmPht(nowMs))}
+                </span>
+              </span>
+            )}
 
             {wateringLog && plantHealth !== "fresh" && (
               <span
@@ -968,6 +1302,23 @@ export default function MemoryGardenApp({
               />
             ))}
           </div>
+        ) : viewMode === "daily" ? (
+          <DailyGardenTab
+            cycleKey={
+              dailyCycleKey ||
+              (nowMs > 0 ? getManilaCycleKey(nowMs) : "today")
+            }
+            entries={dailyEntries}
+            isNight={isNight}
+            isWatered={waterSparkleActive}
+            plantHealth={plantHealth}
+            countdownLabel={
+              nowMs > 0
+                ? formatCountdown(getMsUntilNext6PmPht(nowMs))
+                : "6:00 PM PHT"
+            }
+            onOpenWaterModal={() => setIsWaterModalOpen(true)}
+          />
         ) : viewMode === "garden" ? (
           <GardenPlace
             year={year}
@@ -978,7 +1329,10 @@ export default function MemoryGardenApp({
             isWatered={waterSparkleActive}
             plantHealth={plantHealth}
             theme={gardenTheme}
+            unlockedSceneries={unlockedSceneries}
+            vaseShards={gardenStats.vase_shards}
             onChangeTheme={handleChangeTheme}
+            onUnlockScenery={handleUnlockScenery}
             onSavePlacement={handleSavePlacement}
             onRemovePlacement={handleRemovePlacement}
             onOpenMonth={(idx) => setSelectedMonthIndex(idx)}
@@ -1229,6 +1583,17 @@ export default function MemoryGardenApp({
           onOpenBoutique={() => setIsBoutiqueOpen(true)}
         />
       )}
+
+      {/* Daily Photo-to-Water Modal */}
+      <DailyWaterModal
+        isOpen={isWaterModalOpen}
+        uploadedBy={uploadedBy}
+        cycleKey={
+          dailyCycleKey || (nowMs > 0 ? getManilaCycleKey(nowMs) : "today")
+        }
+        onClose={() => setIsWaterModalOpen(false)}
+        onSuccess={handleDailyWaterSuccess}
+      />
 
       {/* Streak Milestone & Co-op Toast */}
       {gardenToast && (
