@@ -330,6 +330,36 @@ export default function MemoryGardenApp({
     return () => clearInterval(interval);
   }, [latestByPartner, partnerOptions]);
 
+  // Browser & PWA Notification Helper (uses ServiceWorkerRegistration on Android PWA)
+  const showGardenNotification = useCallback(
+    async (title: string, body: string) => {
+      try {
+        if (typeof window === "undefined" || !("Notification" in window)) return;
+        if (Notification.permission !== "granted") return;
+
+        if ("serviceWorker" in navigator) {
+          const registration = await navigator.serviceWorker.getRegistration();
+          if (registration && typeof registration.showNotification === "function") {
+            await registration.showNotification(title, {
+              body,
+              icon: "/pwa-icon/192",
+              badge: "/pwa-icon/192",
+            });
+            return;
+          }
+        }
+
+        new Notification(title, {
+          body,
+          icon: "/pwa-icon/192",
+        });
+      } catch {
+        // Never crash the app if a browser blocks direct Notification construction
+      }
+    },
+    []
+  );
+
   // Browser notification at 6:00 PM PHT reset & when current cycle still needs watering
   useEffect(() => {
     if (!isAuthenticated || !notifEnabled || nowMs === 0) return;
@@ -344,10 +374,10 @@ export default function MemoryGardenApp({
         "memory_garden_last_notif_cycle"
       );
       if (lastNotifiedCycle !== currentCycle) {
-        new Notification("Our Memory Garden needs water! 🚿", {
-          body: `Hi ${uploadedBy}! Water your plants today before 6:00 PM PHT so they stay blooming.`,
-          icon: "/icon.svg",
-        });
+        void showGardenNotification(
+          "Our Memory Garden needs water! 🚿",
+          `Hi ${uploadedBy}! Water your plants today before 6:00 PM PHT so they stay blooming.`
+        );
         localStorage.setItem("memory_garden_last_notif_cycle", currentCycle);
       }
     }
@@ -355,16 +385,23 @@ export default function MemoryGardenApp({
     const msToReset = getMsUntilNext6PmPht(nowMs);
     const resetTimer = setTimeout(() => {
       const nextCycle = getManilaCycleKey(Date.now() + 2000);
-      new Notification("6:00 PM PHT — Garden Watering Reset! 🌸", {
-        body: `It's 6:00 PM! Time for ${uploadedBy} to water Our Memory Garden.`,
-        icon: "/icon.svg",
-      });
+      void showGardenNotification(
+        "6:00 PM PHT — Garden Watering Reset! 🌸",
+        `It's 6:00 PM! Time for ${uploadedBy} to water Our Memory Garden.`
+      );
       localStorage.setItem("memory_garden_last_notif_cycle", nextCycle);
       setNowMs(Date.now());
     }, msToReset + 1500);
 
     return () => clearTimeout(resetTimer);
-  }, [isAuthenticated, notifEnabled, nowMs, hasPartnerWateredToday, uploadedBy]);
+  }, [
+    isAuthenticated,
+    notifEnabled,
+    nowMs,
+    hasPartnerWateredToday,
+    uploadedBy,
+    showGardenNotification,
+  ]);
 
   // Random Memory Spotlight
   const [spotlightMemory, setSpotlightMemory] = useState<Memory | null>(null);
@@ -562,23 +599,32 @@ export default function MemoryGardenApp({
       return;
     }
 
-    const permission =
-      Notification.permission === "granted"
-        ? "granted"
-        : await Notification.requestPermission();
+    try {
+      const permission =
+        Notification.permission === "granted"
+          ? "granted"
+          : await Notification.requestPermission();
 
-    if (permission === "granted") {
-      setNotifEnabled(true);
-      localStorage.setItem("memory_garden_notif", "on");
+      if (permission === "granted") {
+        setNotifEnabled(true);
+        localStorage.setItem("memory_garden_notif", "on");
+        setGardenToast({
+          title: "6:00 PM PHT Reminders Enabled! 🔔",
+          subtitle: "We'll notify you when your garden needs watering.",
+        });
+        setTimeout(() => setGardenToast(null), 3500);
+      } else {
+        setGardenToast({
+          title: "Notification permission blocked",
+          subtitle:
+            "Allow notifications in your browser settings to get 6 PM reminders.",
+        });
+        setTimeout(() => setGardenToast(null), 4000);
+      }
+    } catch {
       setGardenToast({
-        title: "6:00 PM PHT Reminders Enabled! 🔔",
-        subtitle: "We'll notify you when your garden needs watering.",
-      });
-      setTimeout(() => setGardenToast(null), 3500);
-    } else {
-      setGardenToast({
-        title: "Notification permission blocked",
-        subtitle: "Allow notifications in your browser settings to get 6 PM reminders.",
+        title: "Could not enable notifications",
+        subtitle: "Please check your browser or device notification settings.",
       });
       setTimeout(() => setGardenToast(null), 4000);
     }
