@@ -38,6 +38,7 @@ import FloatingGardenNav, { type NavDestination } from "./FloatingGardenNav";
 import type { GardenTheme } from "./GardenPlace";
 import MemoryPhotoCarousel from "./MemoryPhotoCarousel";
 import PasscodeGate from "./PasscodeGate";
+import PwaInstallButton from "./PwaInstallButton";
 import VaseIllustration, { type PlantHealth } from "./VaseIllustration";
 import { MOOD_OPTIONS } from "./VaseModal";
 
@@ -1059,9 +1060,11 @@ export default function MemoryGardenApp({
             </span>
           </div>
 
-          <button
-            type="button"
-            onClick={handleToggleNotifications}
+          <div className="flex items-center gap-2">
+            <PwaInstallButton isNight={isNight} />
+            <button
+              type="button"
+              onClick={handleToggleNotifications}
             title={
               notifEnabled
                 ? "6:00 PM PHT reminders enabled (click to turn off)"
@@ -1084,6 +1087,7 @@ export default function MemoryGardenApp({
             )}
             <span>{notifEnabled ? "Reminders On" : "Notify Me"}</span>
           </button>
+          </div>
         </div>
 
         {/* In-App Daily Watering Reminder Banner */}
