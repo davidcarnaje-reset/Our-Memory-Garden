@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   Bell,
   BellRing,
   Calendar,
-  Camera,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -14,7 +14,6 @@ import {
   Flower2,
   Gem,
   Heart,
-  LayoutGrid,
   Loader2,
   LogOut,
   Moon,
@@ -22,7 +21,6 @@ import {
   Shuffle,
   Sparkles,
   Sun,
-  Trees,
   User,
   X,
 } from "lucide-react";
@@ -34,16 +32,22 @@ import type {
   MemoryReply,
   WateringLog,
 } from "@/src/lib/db";
-import { SPECIAL_VASES, STARTER_VASE } from "@/src/lib/vaseCatalog";
-import DailyGardenTab from "./DailyGardenTab";
-import DailyWaterModal, { type DailyWaterResult } from "./DailyWaterModal";
-import GardenPlace, { type GardenTheme } from "./GardenPlace";
+import { STARTER_VASE } from "@/src/lib/vaseCatalog";
+import type { DailyWaterResult } from "./DailyWaterModal";
+import FloatingGardenNav, { type NavDestination } from "./FloatingGardenNav";
+import type { GardenTheme } from "./GardenPlace";
 import MemoryPhotoCarousel from "./MemoryPhotoCarousel";
-import MonthVasePickerModal from "./MonthVasePickerModal";
 import PasscodeGate from "./PasscodeGate";
-import VaseBoutiqueModal from "./VaseBoutiqueModal";
 import VaseIllustration, { type PlantHealth } from "./VaseIllustration";
-import VaseModal, { MOOD_OPTIONS } from "./VaseModal";
+import { MOOD_OPTIONS } from "./VaseModal";
+
+// Lazy-load secondary tabs and modals to keep initial page load fast
+const DailyGardenTab = dynamic(() => import("./DailyGardenTab"));
+const DailyWaterModal = dynamic(() => import("./DailyWaterModal"));
+const GardenPlace = dynamic(() => import("./GardenPlace"));
+const MonthVasePickerModal = dynamic(() => import("./MonthVasePickerModal"));
+const VaseBoutiqueView = dynamic(() => import("./VaseBoutiqueView"));
+const VaseModal = dynamic(() => import("./VaseModal"));
 
 const MONTHS = [
   "January",
@@ -69,6 +73,14 @@ const FIREFLIES = [
   { top: "76%", left: "62%", delay: "1.9s" },
   { top: "19%", left: "52%", delay: "4.0s" },
   { top: "84%", left: "40%", delay: "2.2s" },
+];
+
+const BUTTERFLIES = [
+  { top: "16%", left: "14%", delay: "0s", color: "#F2A6B8" },
+  { top: "28%", left: "76%", delay: "2.4s", color: "#F4C977" },
+  { top: "48%", left: "22%", delay: "4.8s", color: "#B8A3DE" },
+  { top: "64%", left: "80%", delay: "1.5s", color: "#9CCCE0" },
+  { top: "78%", left: "45%", delay: "3.6s", color: "#F2B59B" },
 ];
 
 type AmbienceMode = "auto" | "day" | "night";
@@ -211,10 +223,10 @@ export default function MemoryGardenApp({
 
   const isNight = ambienceMode === "auto" ? autoIsNight : ambienceMode === "night";
 
-  // View Mode: Monthly Shelf vs Garden Place vs Daily Garden
-  const [viewMode, setViewMode] = useState<"shelf" | "garden" | "daily">(
-    "shelf"
-  );
+  // View Mode: Monthly Shelf vs Garden Place vs Daily Garden vs Vase Boutique
+  const [viewMode, setViewMode] = useState<
+    "shelf" | "garden" | "daily" | "boutique"
+  >("shelf");
   const [placements, setPlacements] = useState<GardenPlacement[]>([]);
   const [dailyCycleKey, setDailyCycleKey] = useState<string>("");
   const [dailyEntries, setDailyEntries] = useState<DailyWaterEntry[]>([]);
@@ -235,7 +247,6 @@ export default function MemoryGardenApp({
   const [equippedVases, setEquippedVases] = useState<Record<string, string>>(
     {}
   );
-  const [isBoutiqueOpen, setIsBoutiqueOpen] = useState(false);
   const [customizingMonthIndex, setCustomizingMonthIndex] = useState<
     number | null
   >(null);
@@ -417,64 +428,35 @@ export default function MemoryGardenApp({
     let cancelled = false;
     async function load() {
       try {
-        const [memRes, waterRes, gardenRes, statusRes, dailyRes] =
-          await Promise.all([
-            fetch(`/api/memories?year=${year}`, { cache: "no-store" }),
-            fetch("/api/water", { cache: "no-store" }),
-            fetch(`/api/garden?year=${year}`, { cache: "no-store" }),
-            fetch(`/api/garden/status?year=${year}`, { cache: "no-store" }),
-            fetch("/api/garden/daily", { cache: "no-store" }),
-          ]);
+        const res = await fetch(`/api/garden/bootstrap?year=${year}`, {
+          cache: "no-store",
+        });
         if (cancelled) return;
-        if (memRes.status === 401) {
+        if (res.status === 401) {
           setIsAuthenticated(false);
           return;
         }
-        const memData = await memRes.json();
-        if (!memRes.ok) {
-          setLoadError(memData.error ?? "Unable to load memories.");
+        const data = await res.json();
+        if (!res.ok) {
+          setLoadError(data.error ?? "Unable to load memories.");
         } else {
-          setMemories(Array.isArray(memData.memories) ? memData.memories : []);
+          setMemories(Array.isArray(data.memories) ? data.memories : []);
+          if (data.latest) setWateringLog(data.latest);
+          if (data.latestByPartner) setLatestByPartner(data.latestByPartner);
+          if (Array.isArray(data.placements)) setPlacements(data.placements);
+          if (data.stats) setGardenStats(data.stats);
+          if (Array.isArray(data.unlockedVases)) {
+            setUnlockedVases(data.unlockedVases);
+          }
+          if (Array.isArray(data.unlockedSceneries)) {
+            setUnlockedSceneries(data.unlockedSceneries);
+          }
+          if (data.equippedVases) setEquippedVases(data.equippedVases);
+          if (data.dailyCycleKey) setDailyCycleKey(data.dailyCycleKey);
+          if (Array.isArray(data.dailyEntries)) {
+            setDailyEntries(data.dailyEntries);
+          }
           setLoadError(null);
-        }
-
-        if (waterRes.ok) {
-          const waterData = await waterRes.json();
-          if (waterData.latest) {
-            setWateringLog(waterData.latest);
-          }
-          if (waterData.latestByPartner) {
-            setLatestByPartner(waterData.latestByPartner);
-          }
-        }
-
-        if (gardenRes.ok) {
-          const gardenData = await gardenRes.json();
-          if (Array.isArray(gardenData.placements)) {
-            setPlacements(gardenData.placements);
-          }
-        }
-
-        if (statusRes.ok) {
-          const statusData = await statusRes.json();
-          if (statusData.stats) setGardenStats(statusData.stats);
-          if (Array.isArray(statusData.unlockedVases)) {
-            setUnlockedVases(statusData.unlockedVases);
-          }
-          if (Array.isArray(statusData.unlockedSceneries)) {
-            setUnlockedSceneries(statusData.unlockedSceneries);
-          }
-          if (statusData.equippedVases) {
-            setEquippedVases(statusData.equippedVases);
-          }
-        }
-
-        if (dailyRes.ok) {
-          const dailyData = await dailyRes.json();
-          if (dailyData.cycleKey) setDailyCycleKey(dailyData.cycleKey);
-          if (Array.isArray(dailyData.entries)) {
-            setDailyEntries(dailyData.entries);
-          }
         }
       } catch {
         if (!cancelled) {
@@ -503,6 +485,28 @@ export default function MemoryGardenApp({
     }
     return grouped;
   }, [memories]);
+
+  function handleFloatingNavSelect(dest: NavDestination) {
+    if (dest === "shelf") {
+      setSpotlightMemory(null);
+      setViewMode("shelf");
+    } else if (dest === "garden") {
+      setSpotlightMemory(null);
+      setViewMode("garden");
+    } else if (dest === "daily") {
+      setSpotlightMemory(null);
+      if (viewMode === "daily") {
+        setIsWaterModalOpen(true);
+      } else {
+        setViewMode("daily");
+      }
+    } else if (dest === "boutique") {
+      setSpotlightMemory(null);
+      setViewMode("boutique");
+    } else if (dest === "random") {
+      handlePickRandomFlower();
+    }
+  }
 
   function handleWaterGarden() {
     setIsWaterModalOpen(true);
@@ -813,8 +817,8 @@ export default function MemoryGardenApp({
           : "bg-transparent text-[#3F322B]"
       }`}
     >
-      {/* Night Ambience: Fairy Lights & Drifting Fireflies */}
-      {isNight && (
+      {/* Night Ambience: Fairy Lights & Drifting Fireflies | Day Ambience: Fluttering Butterflies */}
+      {isNight ? (
         <div
           className="fixed inset-0 pointer-events-none overflow-hidden z-0"
           aria-hidden="true"
@@ -831,6 +835,54 @@ export default function MemoryGardenApp({
                 animationDelay: ff.delay,
               }}
             />
+          ))}
+        </div>
+      ) : (
+        <div
+          className="fixed inset-0 pointer-events-none overflow-hidden z-0"
+          aria-hidden="true"
+        >
+          {BUTTERFLIES.map((bf, idx) => (
+            <div
+              key={idx}
+              className="absolute w-7 h-7 opacity-75 animate-butterfly"
+              style={{
+                top: bf.top,
+                left: bf.left,
+                animationDelay: bf.delay,
+              }}
+            >
+              <svg viewBox="0 0 32 32" className="w-full h-full">
+                <g className="animate-wing">
+                  <ellipse cx="10" cy="13" rx="6" ry="5" fill={bf.color} />
+                  <ellipse cx="22" cy="13" rx="6" ry="5" fill={bf.color} />
+                  <ellipse
+                    cx="11"
+                    cy="20"
+                    rx="4.2"
+                    ry="4"
+                    fill={bf.color}
+                    opacity="0.85"
+                  />
+                  <ellipse
+                    cx="21"
+                    cy="20"
+                    rx="4.2"
+                    ry="4"
+                    fill={bf.color}
+                    opacity="0.85"
+                  />
+                </g>
+                <rect
+                  x="15"
+                  y="10"
+                  width="2"
+                  height="13"
+                  rx="1"
+                  fill="#5C4A3E"
+                />
+              </svg>
+            </div>
           ))}
         </div>
       )}
@@ -973,9 +1025,9 @@ export default function MemoryGardenApp({
         </div>
       </header>
 
-      {/* Garden Action Bar: View Toggle, Streak HUD, Watering Can & Boutique */}
-      <div className="relative z-10 max-w-6xl w-full mx-auto px-3.5 sm:px-6 pt-4 sm:pt-6 flex flex-col gap-3">
-        {/* Streak, Shards & Boutique HUD Strip */}
+      {/* Garden Action Bar: Streak HUD, Reminders & Watering Status */}
+      <div className="relative z-10 max-w-6xl w-full mx-auto px-3.5 sm:px-6 md:pl-24 pt-4 sm:pt-6 flex flex-col gap-3">
+        {/* Streak, Shards & Reminders Strip */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <span
@@ -1007,50 +1059,31 @@ export default function MemoryGardenApp({
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleToggleNotifications}
-              title={
-                notifEnabled
-                  ? "6:00 PM PHT reminders enabled (click to turn off)"
-                  : "Enable 6:00 PM PHT watering reminders"
-              }
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border text-xs font-semibold transition cursor-pointer ${
-                notifEnabled
-                  ? isNight
-                    ? "bg-[#26382B] border-[#3A5942] text-[#A4D4AC]"
-                    : "bg-[#E4EDE4] border-[#C6DBC7] text-[#426346]"
-                  : isNight
-                    ? "bg-[#232B27] border-[#35403A] text-[#B5ACA0] hover:text-white"
-                    : "bg-[#FFFCF7] border-[#E4D9CB] text-[#6E5C51] hover:bg-[#F2E9DC]"
-              }`}
-            >
-              {notifEnabled ? (
-                <BellRing className="w-3.5 h-3.5" />
-              ) : (
-                <Bell className="w-3.5 h-3.5" />
-              )}
-              <span className="hidden sm:inline">
-                {notifEnabled ? "Reminders On" : "Notify Me"}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsBoutiqueOpen(true)}
-              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl border text-xs font-semibold transition cursor-pointer ${
-                isNight
-                  ? "bg-[#2A2635] border-[#453E59] text-[#DFCEFA] hover:bg-[#342F42]"
-                  : "bg-[#F6F0FC] border-[#DFD2F0] text-[#5F438A] hover:bg-[#ECE2F7]"
-              }`}
-            >
-              <span>🏺 Vase Boutique</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-white/70 text-[#4B346E] text-[10px]">
-                {unlockedVases.length}/{SPECIAL_VASES.length}
-              </span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleToggleNotifications}
+            title={
+              notifEnabled
+                ? "6:00 PM PHT reminders enabled (click to turn off)"
+                : "Enable 6:00 PM PHT watering reminders"
+            }
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border text-xs font-semibold transition cursor-pointer ${
+              notifEnabled
+                ? isNight
+                  ? "bg-[#26382B] border-[#3A5942] text-[#A4D4AC]"
+                  : "bg-[#E4EDE4] border-[#C6DBC7] text-[#426346]"
+                : isNight
+                  ? "bg-[#232B27] border-[#35403A] text-[#B5ACA0] hover:text-white"
+                  : "bg-[#FFFCF7] border-[#E4D9CB] text-[#6E5C51] hover:bg-[#F2E9DC]"
+            }`}
+          >
+            {notifEnabled ? (
+              <BellRing className="w-3.5 h-3.5" />
+            ) : (
+              <Bell className="w-3.5 h-3.5" />
+            )}
+            <span>{notifEnabled ? "Reminders On" : "Notify Me"}</span>
+          </button>
         </div>
 
         {/* In-App Daily Watering Reminder Banner */}
@@ -1083,13 +1116,13 @@ export default function MemoryGardenApp({
                 </span>
               </div>
               <div className="flex items-center gap-1.5 ml-auto">
-              <button
-                type="button"
-                onClick={handleWaterGarden}
-                className="px-3 py-1 rounded-xl bg-[#4E89B5] hover:bg-[#3F78A3] text-white font-semibold transition cursor-pointer"
-              >
-                Water Now 💧
-              </button>
+                <button
+                  type="button"
+                  onClick={handleWaterGarden}
+                  className="px-3 py-1 rounded-xl bg-[#4E89B5] hover:bg-[#3F78A3] text-white font-semibold transition cursor-pointer"
+                >
+                  Water Now 💧
+                </button>
                 <button
                   type="button"
                   onClick={() =>
@@ -1104,178 +1137,108 @@ export default function MemoryGardenApp({
             </div>
           )}
 
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-          {/* Monthly Shelf / Garden Place / Daily Garden Toggle */}
-          <div
-            className={`inline-flex flex-wrap items-center p-1 rounded-2xl border ${
-              isNight
-                ? "bg-[#232B27] border-[#35403A]"
-                : "bg-[#FFFCF7] border-[#E4D9CB]"
-            }`}
-          >
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => setViewMode("shelf")}
-              className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
-                viewMode === "shelf"
-                  ? "bg-[#6D8C70] text-white shadow-xs"
-                  : isNight
-                    ? "text-[#B5ACA0] hover:text-white"
-                    : "text-[#6E5C51] hover:text-[#3F322B]"
+              onClick={handleWaterGarden}
+              className={`inline-flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-2 rounded-2xl text-xs sm:text-sm font-medium border shadow-xs transition cursor-pointer ${
+                waterSparkleActive
+                  ? "bg-[#659EC7] border-[#538AB2] text-white"
+                  : plantHealth === "withered"
+                    ? "bg-[#B85042] border-[#9E4034] text-white animate-pulse"
+                    : plantHealth === "wilting"
+                      ? "bg-[#DF9A4E] border-[#C9853B] text-white"
+                      : isNight
+                        ? "bg-[#232B27] border-[#35403A] text-[#B8D9EE] hover:bg-[#2C3732]"
+                        : "bg-[#FFFCF7] border-[#D9E5EC] text-[#3F6885] hover:bg-[#EEF6FB]"
               }`}
             >
-              <LayoutGrid className="w-3.5 h-3.5" />
-              <span>Monthly Shelf</span>
+              <Droplets
+                className={`w-4 h-4 ${waterSparkleActive ? "animate-bounce" : ""}`}
+              />
+              <span>
+                {waterSparkleActive
+                  ? "Watered!"
+                  : plantHealth === "withered"
+                    ? "Revive Garden!"
+                    : hasPartnerWateredToday(uploadedBy)
+                      ? "Watered Today ✓"
+                      : "Water Garden"}
+              </span>
             </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("garden")}
-              className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
-                viewMode === "garden"
-                  ? "bg-[#6D8C70] text-white shadow-xs"
-                  : isNight
-                    ? "text-[#B5ACA0] hover:text-white"
-                    : "text-[#6E5C51] hover:text-[#3F322B]"
-              }`}
-            >
-              <Trees className="w-3.5 h-3.5" />
-              <span>Garden Place</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("daily")}
-              className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-semibold transition cursor-pointer ${
-                viewMode === "daily"
-                  ? "bg-[#4E89B5] text-white shadow-xs"
-                  : isNight
-                    ? "text-[#B5ACA0] hover:text-white"
-                    : "text-[#6E5C51] hover:text-[#3F322B]"
-              }`}
-            >
-              <Camera className="w-3.5 h-3.5" />
-              <span>Daily Garden</span>
-              {dailyEntries.length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full bg-white/25 text-[10px]">
-                  {dailyEntries.length}
+
+            {/* Both-Partner Daily Watering Checklist & 6 PM PHT Reset Countdown */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {partnerOptions.map((partner) => {
+                const wateredToday = hasPartnerWateredToday(partner);
+                return (
+                  <span
+                    key={partner}
+                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border ${
+                      wateredToday
+                        ? isNight
+                          ? "bg-[#26382B] border-[#3A5942] text-[#A4D4AC]"
+                          : "bg-[#E4EDE4] border-[#C6DBC7] text-[#426346]"
+                        : isNight
+                          ? "bg-[#232B27] border-[#35403A] text-[#B5ACA0]"
+                          : "bg-[#F6EFE5] border-[#E4D9CB] text-[#7A685D]"
+                    }`}
+                  >
+                    <span>{wateredToday ? "💧" : "⏳"}</span>
+                    <span>{partner}</span>
+                  </span>
+                );
+              })}
+
+              {nowMs > 0 && (
+                <span
+                  className={`inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full ${
+                    isNight
+                      ? "bg-[#232B27]/90 text-[#B5ACA0]"
+                      : "bg-[#F2E9DC]/80 text-[#7A685D]"
+                  }`}
+                  title="Daily watering resets every 6:00 PM Philippine Time"
+                >
+                  <Clock className="w-3 h-3" />
+                  <span>
+                    6 PM PHT reset in{" "}
+                    {formatCountdown(getMsUntilNext6PmPht(nowMs))}
+                  </span>
                 </span>
               )}
-            </button>
-          </div>
 
-          <button
-            type="button"
-            onClick={handleWaterGarden}
-            className={`inline-flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-4 py-2 rounded-2xl text-xs sm:text-sm font-medium border shadow-xs transition cursor-pointer ${
-              waterSparkleActive
-                ? "bg-[#659EC7] border-[#538AB2] text-white"
-                : plantHealth === "withered"
-                  ? "bg-[#B85042] border-[#9E4034] text-white animate-pulse"
-                  : plantHealth === "wilting"
-                    ? "bg-[#DF9A4E] border-[#C9853B] text-white"
-                    : isNight
-                      ? "bg-[#232B27] border-[#35403A] text-[#B8D9EE] hover:bg-[#2C3732]"
-                      : "bg-[#FFFCF7] border-[#D9E5EC] text-[#3F6885] hover:bg-[#EEF6FB]"
-            }`}
-          >
-            <Droplets
-              className={`w-4 h-4 ${waterSparkleActive ? "animate-bounce" : ""}`}
-            />
-            <span>
-              {waterSparkleActive
-                ? "Watered!"
-                : plantHealth === "withered"
-                  ? "Revive Garden!"
-                  : hasPartnerWateredToday(uploadedBy)
-                    ? "Watered Today ✓"
-                    : "Water Garden"}
-            </span>
-          </button>
-
-          {/* Both-Partner Daily Watering Checklist & 6 PM PHT Reset Countdown */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            {partnerOptions.map((partner) => {
-              const wateredToday = hasPartnerWateredToday(partner);
-              return (
+              {wateringLog && plantHealth !== "fresh" && (
                 <span
-                  key={partner}
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border ${
-                    wateredToday
-                      ? isNight
-                        ? "bg-[#26382B] border-[#3A5942] text-[#A4D4AC]"
-                        : "bg-[#E4EDE4] border-[#C6DBC7] text-[#426346]"
-                      : isNight
-                        ? "bg-[#232B27] border-[#35403A] text-[#B5ACA0]"
-                        : "bg-[#F6EFE5] border-[#E4D9CB] text-[#7A685D]"
+                  className={`text-[11px] px-2.5 py-1 rounded-full font-medium ${
+                    plantHealth === "withered"
+                      ? "bg-[#FDF0EE] text-[#A94E43]"
+                      : plantHealth === "wilting"
+                        ? "bg-[#FDF4E7] text-[#9A601E]"
+                        : "bg-[#FBF6E8] text-[#8A6D29]"
                   }`}
                 >
-                  <span>{wateredToday ? "💧" : "⏳"}</span>
-                  <span>{partner}</span>
-                </span>
-              );
-            })}
-
-            {nowMs > 0 && (
-              <span
-                className={`inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full ${
-                  isNight
-                    ? "bg-[#232B27]/90 text-[#B5ACA0]"
-                    : "bg-[#F2E9DC]/80 text-[#7A685D]"
-                }`}
-                title="Daily watering resets every 6:00 PM Philippine Time"
-              >
-                <Clock className="w-3 h-3" />
-                <span>
-                  6 PM PHT reset in{" "}
-                  {formatCountdown(getMsUntilNext6PmPht(nowMs))}
-                </span>
-              </span>
-            )}
-
-            {wateringLog && plantHealth !== "fresh" && (
-              <span
-                className={`text-[11px] px-2.5 py-1 rounded-full font-medium ${
-                  plantHealth === "withered"
-                    ? "bg-[#FDF0EE] text-[#A94E43]"
+                  {plantHealth === "withered"
+                    ? "Withered (3+ days)"
                     : plantHealth === "wilting"
-                      ? "bg-[#FDF4E7] text-[#9A601E]"
-                      : "bg-[#FBF6E8] text-[#8A6D29]"
-                }`}
-              >
-                {plantHealth === "withered"
-                  ? "Withered (3+ days)"
-                  : plantHealth === "wilting"
-                    ? "Wilting (2 days)"
-                    : "Thirsty (1 day)"}
-              </span>
-            )}
+                      ? "Wilting (2 days)"
+                      : "Thirsty (1 day)"}
+                </span>
+              )}
+            </div>
           </div>
-        </div>
 
-        <button
-          type="button"
-          onClick={handlePickRandomFlower}
-          disabled={isPickingRandom}
-          className={`inline-flex items-center justify-center gap-2 px-4 py-2 rounded-2xl text-xs sm:text-sm font-medium border shadow-xs transition cursor-pointer w-full sm:w-auto ${
-            isNight
-              ? "bg-[#2B2523] border-[#453A36] text-[#F2B5A5] hover:bg-[#362E2B]"
-              : "bg-[#FFFCF7] border-[#EAD9D2] text-[#A85D4A] hover:bg-[#FDF2EE]"
-          }`}
-        >
-          {isPickingRandom ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Shuffle className="w-4 h-4" />
+          {spotlightEmpty && (
+            <span className="text-xs text-[#C87A65] font-medium">
+              No unlocked flowers yet!
+            </span>
           )}
-          <span>
-            {spotlightEmpty ? "No unlocked flowers yet!" : "Pick a Random Flower"}
-          </span>
-        </button>
         </div>
       </div>
 
-      {/* Main Garden Shelf Grid */}
-      <main className="relative z-10 flex-1 max-w-6xl w-full mx-auto px-3.5 sm:px-6 py-5 sm:py-8">
+      {/* Main Garden Content with Smooth Page Transition */}
+      <main className="relative z-10 flex-1 max-w-6xl w-full mx-auto px-3.5 sm:px-6 md:pl-24 py-5 sm:py-8">
+        <div key={viewMode} className="animate-page-in">
         {loadError && (
           <div className="mb-6 rounded-2xl bg-[#FDF0EE] border border-[#F0C8C2] px-4 py-3 text-sm text-[#A94E43] flex items-center justify-between gap-4">
             <span>{loadError}</span>
@@ -1302,6 +1265,13 @@ export default function MemoryGardenApp({
               />
             ))}
           </div>
+        ) : viewMode === "boutique" ? (
+          <VaseBoutiqueView
+            vaseShards={gardenStats.vase_shards}
+            unlockedVases={unlockedVases}
+            isNight={isNight}
+            onUnlockVase={handleUnlockVase}
+          />
         ) : viewMode === "daily" ? (
           <DailyGardenTab
             cycleKey={
@@ -1435,16 +1405,26 @@ export default function MemoryGardenApp({
             })}
           </div>
         )}
+        </div>
       </main>
 
-      {/* Cozy Footer */}
+      {/* Cozy Footer (padded for bottom mobile nav) */}
       <footer
-        className={`relative z-10 py-6 text-center text-xs ${
+        className={`relative z-10 pt-4 pb-24 md:py-6 md:pl-20 text-center text-xs ${
           isNight ? "text-[#9A9287]" : "text-[#8D7B6F]"
         }`}
       >
         Tap any vase to revisit a memory or plant a new flower together.
       </footer>
+
+      {/* Floating Expanding Pill Nav (Bottom on Mobile, Docked Left Side Rail on Desktop) */}
+      <FloatingGardenNav
+        activeView={viewMode}
+        isSpotlightOpen={Boolean(spotlightMemory)}
+        dailyCount={dailyEntries.length}
+        isNight={isNight}
+        onSelect={handleFloatingNavSelect}
+      />
 
       {/* Vase Inspection & Upload Modal */}
       {selectedMonthIndex !== null && (
@@ -1555,15 +1535,6 @@ export default function MemoryGardenApp({
         </div>
       )}
 
-      {/* Vase Boutique Modal */}
-      <VaseBoutiqueModal
-        isOpen={isBoutiqueOpen}
-        vaseShards={gardenStats.vase_shards}
-        unlockedVases={unlockedVases}
-        onClose={() => setIsBoutiqueOpen(false)}
-        onUnlockVase={handleUnlockVase}
-      />
-
       {/* Per-Month Unlocked Vase Picker Modal */}
       {customizingMonthIndex !== null && (
         <MonthVasePickerModal
@@ -1580,7 +1551,7 @@ export default function MemoryGardenApp({
           unlockedVases={unlockedVases}
           onClose={() => setCustomizingMonthIndex(null)}
           onEquipVase={handleEquipVase}
-          onOpenBoutique={() => setIsBoutiqueOpen(true)}
+          onOpenBoutique={() => setViewMode("boutique")}
         />
       )}
 

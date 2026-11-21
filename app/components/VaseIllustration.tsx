@@ -505,7 +505,7 @@ function renderVasePattern(pattern: VasePattern, accent: string) {
   }
 }
 
-export default function VaseIllustration({
+function VaseIllustration({
   count,
   flowers,
   monthIndex,
@@ -791,3 +791,5 @@ export default function VaseIllustration({
     </svg>
   );
 }
+
+export default React.memo(VaseIllustration);

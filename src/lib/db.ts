@@ -146,8 +146,8 @@ function createPool(): Pool {
     },
     dateStrings: true,
     waitForConnections: true,
-    connectionLimit: 5,
-    maxIdle: 5,
+    connectionLimit: 10,
+    maxIdle: 10,
     idleTimeout: 60000,
     enableKeepAlive: true,
   });
